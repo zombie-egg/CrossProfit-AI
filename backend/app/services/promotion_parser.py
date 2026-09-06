@@ -37,7 +37,7 @@ class PromotionParserService:
         fields = self.normalize_fields(self.extract_rule_candidates(text))
         if platform_hint:
             fields["platform"] = platform_hint
-        if not fields.get("platform"):
+        if fields.get("platform") in (None, "", "unknown"):
             fields["platform"] = self.detect_platform(f"{url or ''} {text}")
         try:
             llm_fields = self.llm.extract(text) if text else {}

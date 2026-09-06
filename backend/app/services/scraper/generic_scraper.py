@@ -53,5 +53,7 @@ class GenericScraper(BaseScraper):
         description = soup.find("meta", attrs={"name": "description"})
         meta = description.get("content", "") if description else ""
         text = "\n".join(line.strip() for line in soup.get_text("\n").splitlines() if line.strip())
+        challenge_text = f"{title}\n{text}".lower()
+        if "security check" in challenge_text or "captcha" in challenge_text:
+            raise ScraperError("平台返回了访问验证页面，可能存在登录或反爬限制")
         return ScrapedPage(url=url, title=title, text=f"{title}\n{meta}\n{text}"[:100_000])
-
