@@ -40,6 +40,11 @@ export const api = {
     if (activityId) params.set("activity_id", String(activityId));
     return request<AnalysisRun>(`/analysis/run${params.size ? `?${params}` : ""}`, { method: "POST", body: JSON.stringify(payload) });
   },
+  archiveAnalysis: (payload: ProfitAnalysisRequest, productId: number, activityId?: number) => {
+    const params = new URLSearchParams({ product_id: String(productId) });
+    if (activityId) params.set("activity_id", String(activityId));
+    return request<AnalysisRun & { activity_id: number }>(`/analysis/archive?${params}`, { method: "POST", body: JSON.stringify(payload) });
+  },
   analysis: (id: number) => request<{ result: AnalysisRun["result"]; scenarios: AnalysisRun["scenarios"]; recommendations?: string[] }>(`/analysis/${id}`),
   exportUrl: (id: number, format: "xlsx" | "csv") => `${API_URL}/export/${id}?format=${format}`,
 };

@@ -154,6 +154,75 @@ def run_analysis(payload: ProfitAnalysisRequest, product_id: int | None = None, 
     return {"analysis_id": analysis_id, "result": result, "scenarios": scenarios, "recommendations": recommendations}
 
 
+@router.post("/analysis/archive")
+def archive_analysis(payload: ProfitAnalysisRequest, product_id: int, activity_id: int | None = None, db: Session = Depends(get_db)):
+    """Persist an activity and its analysis atomically after the user confirms the preview."""
+    product = db.get(Product, product_id)
+    if not product:
+        raise HTTPException(404, "商品不存在")
+    activity = db.get(PromotionActivity, activity_id) if activity_id is not None else None
+    if activity_id is not None and (activity is None or activity.product_id != product_id):
+        raise HTTPException(404, "活动不存在或不属于当前商品")
+
+    result = ProfitEngine().calculate(payload)
+    scenarios = ScenarioEngine().analyze(payload)
+    recommendations = StrategyEngine().generate(payload, result, scenarios)
+    if activity is None:
+        activity_payload = payload.activity
+        parameters = {
+            key: str(getattr(activity_payload, key))
+            for key in [
+                "platform_commission_rate", "extra_commission_rate", "creator_commission_rate",
+                "shipping_subsidy", "seller_shipping_cost", "platform_subsidy", "coupon_amount",
+                "return_rate_override", "registration_fee", "ad_budget", "creative_cost", "creator_fixed_fee",
+            ]
+            if getattr(activity_payload, key) is not None and getattr(activity_payload, key) != 0
+        }
+        activity = PromotionActivity(
+            product_id=product_id,
+            platform=activity_payload.platform,
+            activity_name=activity_payload.activity_name,
+            activity_type=activity_payload.activity_type,
+            source_url=activity_payload.source_url,
+            start_date=activity_payload.start_date,
+            end_date=activity_payload.end_date,
+            discount_type=activity_payload.discount_type,
+            discount_value=activity_payload.discount_value,
+            estimated_sales=activity_payload.estimated_sales,
+            currency=activity_payload.currency,
+            raw_text=activity_payload.raw_text,
+            parse_confidence=activity_payload.parse_confidence,
+            missing_fields=activity_payload.missing_fields,
+            parameters=parameters,
+        )
+        db.add(activity)
+        db.flush()
+
+    record = AnalysisRecord(
+        product_id=product_id,
+        activity_id=activity.id,
+        unit_profit=result.unit_profit,
+        profit_margin=result.profit_margin,
+        estimated_total_profit=result.estimated_total_profit,
+        risk_level=result.risk_level,
+        result_data={
+            "result": result.model_dump(mode="json"),
+            "scenarios": [item.model_dump(mode="json") for item in scenarios],
+            "recommendations": recommendations,
+        },
+    )
+    db.add(record)
+    db.commit()
+    db.refresh(record)
+    return {
+        "analysis_id": record.id,
+        "activity_id": activity.id,
+        "result": result,
+        "scenarios": scenarios,
+        "recommendations": recommendations,
+    }
+
+
 @router.get("/analysis")
 def analysis_history(db: Session = Depends(get_db)):
     rows = db.execute(select(AnalysisRecord, Product, PromotionActivity).join(Product, Product.id == AnalysisRecord.product_id).join(PromotionActivity, PromotionActivity.id == AnalysisRecord.activity_id).order_by(AnalysisRecord.created_at.desc())).all()
