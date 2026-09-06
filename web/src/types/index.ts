@@ -148,9 +148,9 @@ export interface HistoryItem {
   profit_margin: string;
   estimated_total_profit: string;
   risk_level: ProfitResult["risk_level"];
+  cost_drivers?: Array<{ item: string; amount: string }>;
   created_at: string;
 }
 
 export type Recommendation = string;
 export interface ComparisonResult { case: DemoCase; rank: number; }
-

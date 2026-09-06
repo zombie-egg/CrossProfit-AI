@@ -226,7 +226,33 @@ def archive_analysis(payload: ProfitAnalysisRequest, product_id: int, activity_i
 @router.get("/analysis")
 def analysis_history(db: Session = Depends(get_db)):
     rows = db.execute(select(AnalysisRecord, Product, PromotionActivity).join(Product, Product.id == AnalysisRecord.product_id).join(PromotionActivity, PromotionActivity.id == AnalysisRecord.activity_id).order_by(AnalysisRecord.created_at.desc())).all()
-    return [{"id": record.id, "activity_id": activity.id, "product_id": product.id, "activity_name": activity.activity_name, "product_name": product.name, "platform": activity.platform, "unit_profit": str(record.unit_profit), "profit_margin": str(record.profit_margin), "estimated_total_profit": str(record.estimated_total_profit), "risk_level": record.risk_level, "created_at": record.created_at.isoformat()} for record, product, activity in rows]
+    history = []
+    for record, product, activity in rows:
+        result = (record.result_data or {}).get("result", {})
+        cost_drivers = sorted(
+            (
+                {"item": item.get("item", "其他费用"), "amount": str(item.get("amount", "0"))}
+                for item in result.get("breakdown", [])
+                if float(item.get("amount", 0)) > 0
+            ),
+            key=lambda item: float(item["amount"]),
+            reverse=True,
+        )[:2]
+        history.append({
+            "id": record.id,
+            "activity_id": activity.id,
+            "product_id": product.id,
+            "activity_name": activity.activity_name,
+            "product_name": product.name,
+            "platform": activity.platform,
+            "unit_profit": str(record.unit_profit),
+            "profit_margin": str(record.profit_margin),
+            "estimated_total_profit": str(record.estimated_total_profit),
+            "risk_level": record.risk_level,
+            "cost_drivers": cost_drivers,
+            "created_at": record.created_at.isoformat(),
+        })
+    return history
 
 
 @router.get("/ui/bootstrap")

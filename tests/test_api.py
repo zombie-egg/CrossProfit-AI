@@ -72,7 +72,11 @@ def test_preview_does_not_persist_and_archive_updates_history():
         archived_data = archived.json()
         assert archived_data["analysis_id"] is not None
         assert archived_data["activity_id"] == case["id"]
-        assert len(client.get("/analysis").json()) == len(before) + 1
+        updated_history = client.get("/analysis").json()
+        assert len(updated_history) == len(before) + 1
+        assert updated_history[0]["id"] == archived_data["analysis_id"]
+        assert updated_history[0]["cost_drivers"]
+        assert all(float(item["amount"]) > 0 for item in updated_history[0]["cost_drivers"])
 
     with SessionLocal() as session:
         record = session.get(AnalysisResult, archived_data["analysis_id"])

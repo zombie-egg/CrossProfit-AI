@@ -27,15 +27,20 @@ export default function Dashboard() {
   const caution = results.filter((x) => ["CAUTION", "NOT_RECOMMENDED"].includes(x.risk_level)).length;
   const losses = results.filter((x) => x.risk_level === "LOSS").length;
   const total = results.reduce((sum, x) => sum + Number(x.estimated_total_profit), 0);
+  const latestArchive = history[0] ?? null;
+  const previewMargin = latestArchive ? Number(latestArchive.profit_margin) : 0;
+  const previewBarWidth = latestArchive ? (previewMargin < 0 ? 100 : Math.min(100, Math.max(4, previewMargin / .2 * 100))) : 0;
+  const previewBarColor = latestArchive?.risk_level === "LOSS" ? "bg-red-500" : ["CAUTION", "NOT_RECOMMENDED"].includes(latestArchive?.risk_level ?? "") ? "bg-amber-500" : "bg-emerald-500";
+  const previewPressure = latestArchive?.cost_drivers?.map((item) => item.item).join("与") || "暂无显著成本项";
   const pie = [{ name: "健康", value: profitable - caution, color: "#16a34a" }, { name: "谨慎", value: caution, color: "#d97706" }, { name: "亏损", value: losses, color: "#dc2626" }].filter((x) => x.value > 0);
   const trend = [...results].reverse().map((x, i) => ({ name: `#${i + 1}`, profit: Number(x.estimated_total_profit) }));
   const costDrivers = data.cases.flatMap((x) => x.result.breakdown).filter((x) => Number(x.amount) > 0).reduce<Record<string, number>>((acc, item) => ({ ...acc, [item.item]: (acc[item.item] ?? 0) + Number(item.amount) }), {});
   return <div className="space-y-6">
     <section data-dashboard-hero className="relative overflow-hidden rounded-2xl bg-transparent px-6 py-9 text-black sm:px-10 sm:py-11 lg:grid lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-center lg:gap-12">
       <div className="hidden w-80 rounded-2xl bg-transparent p-5 outline outline-1 outline-slate-600/45 lg:col-start-2 lg:row-start-1 lg:block">
-        <div className="flex items-center justify-between text-xs text-slate-500"><span>活动利润预览</span><Badge variant="outline" className="bg-amber-50/80 text-amber-700">谨慎参加</Badge></div>
-        <div className="mt-6 grid grid-cols-2 gap-5"><div><p className="text-xs text-slate-500">单件利润</p><p className="mt-1 text-2xl font-semibold tabular">$1.78</p></div><div><p className="text-xs text-slate-500">利润率</p><p className="mt-1 text-2xl font-semibold tabular">7.9%</p></div></div>
-        <div className="mt-5 h-1.5 overflow-hidden rounded-full bg-slate-200"><div className="h-full w-[42%] bg-amber-500" /></div><p className="mt-3 text-xs text-slate-500">主要压力：达人佣金与履约物流</p>
+        <div className="flex items-center justify-between gap-3 text-xs text-slate-500"><div className="min-w-0"><span>最新归档活动</span><p className="mt-1 truncate font-medium text-slate-800">{latestArchive?.activity_name ?? "暂无归档记录"}</p></div>{latestArchive ? <RiskBadge level={latestArchive.risk_level}/> : <Badge variant="outline">等待归档</Badge>}</div>
+        <div className="mt-6 grid grid-cols-2 gap-5"><div><p className="text-xs text-slate-500">单件利润</p><p className={cn("mt-1 text-2xl font-semibold tabular", latestArchive && Number(latestArchive.unit_profit) < 0 && "text-red-600")}>{latestArchive ? money(latestArchive.unit_profit) : "--"}</p></div><div><p className="text-xs text-slate-500">利润率</p><p className={cn("mt-1 text-2xl font-semibold tabular", previewMargin < 0 && "text-red-600")}>{latestArchive ? percent(latestArchive.profit_margin) : "--"}</p></div></div>
+        <div className="mt-5 h-1.5 overflow-hidden rounded-full bg-slate-200"><div className={cn("h-full transition-[width] duration-500",previewBarColor)} style={{width:`${previewBarWidth}%`}} /></div><p className="mt-3 text-xs text-slate-500">{latestArchive ? `主要压力：${previewPressure}` : "完成分析并归档后，这里会显示真实结果"}</p>
       </div>
       <div className="min-w-0 max-w-[920px] lg:col-start-1 lg:row-start-1">
         <AppleHelloChineseTitleEffect speed={0.82} />
