@@ -102,12 +102,12 @@
   --sidebar-primary: #2563eb; --sidebar-primary-foreground: #ffffff;
   --sidebar-accent: #f1f5f9; --sidebar-accent-foreground: #0f172a;
   --sidebar-border: #e5e7eb; --sidebar-ring: #2563eb;
-  --font-sans: Inter, Geist, "PingFang SC", "Microsoft YaHei", "Noto Sans SC", system-ui, sans-serif;
+  --font-sans: "Songti SC", SimSun, "STSong", "Noto Serif CJK SC", serif;
   --radius: 0.75rem;
 }
 * { border-color: var(--border); }
 html { background: var(--background); }
-body { font-family: var(--font-display-zh), "PingFang SC", "Microsoft YaHei", var(--font-sans); }
+body { font-family: "Songti SC", SimSun, "STSong", "Noto Serif CJK SC", serif; }
 button, a, input, select, textarea { transition-duration: 180ms; }
 ::selection { background: #dbeafe; color: #1e3a8a; }
 .tabular { font-variant-numeric: tabular-nums; }
@@ -121,12 +121,15 @@ button, a, input, select, textarea { transition-duration: 180ms; }
   font-feature-settings: "kern" 1;
 }
 :where(h1, h2, h3, [data-slot="card-title"]) {
-  font-family: var(--font-display-zh), "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  font-family: "Songti SC", SimSun, "STSong", "Noto Serif CJK SC", serif;
   font-weight: 400;
   letter-spacing: 0.075em;
 }
 :where(p, span, label, button, a, input, textarea, th, td) {
-  font-family: var(--font-display-zh), "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", var(--font-sans);
+  font-family: "Songti SC", SimSun, "STSong", "Noto Serif CJK SC", serif;
+}
+.font-heading {
+  font-family: "Songti SC", SimSun, "STSong", "Noto Serif CJK SC", serif;
 }
 .poster-title,
 .poster-title > span {
