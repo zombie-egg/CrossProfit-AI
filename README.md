@@ -18,7 +18,7 @@
 - 中文 SaaS Next.js 比赛主界面、保留的 Streamlit 界面、FastAPI、SQLite 与离线演示数据
 - DeepSeek 可选补充定性分析，OpenAI 可选辅助规则提取；没有 API Key 或调用失败时保留规则建议，利润计算始终由确定性引擎完成
 
-企业反馈的逐项答复、Easyboss 接口缺口与真实账单验证方案见 [docs/enterprise-feedback-plan.md](docs/enterprise-feedback-plan.md)。目前尚未取得真实卖家账单、访谈或 Easyboss 业务接口文档，不能将 Demo 结果视为真实业务验证。
+企业反馈的逐项答复、妙手 ERP 接口与真实账单验证方案见 [docs/enterprise-feedback-plan.md](docs/enterprise-feedback-plan.md)。已找到公开业务接口文档，但尚未取得卖家授权、真实账单或访谈，不能将 Demo 结果视为真实业务验证。
 
 首次使用可按 [docs/how-to-use.md](docs/how-to-use.md) 操作；它说明单品测算与活动分析的分工，以及商品、平台费用配置、活动规则和归档之间的关系。
 

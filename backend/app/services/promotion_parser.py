@@ -11,6 +11,7 @@ from .scraper import GenericScraper, ScraperError
 
 
 MISSING_HELP = {
+    "discount_value": ("卖家承担的活动折扣", "只填写卖家承担的降价；平台出资优惠不能当作卖家折扣。没有卖家降价时填 0。"),
     "platform_commission_rate": ("平台佣金率", "用于计算平台从活动成交额中扣除的基础佣金。"),
     "extra_commission_rate": ("平台额外佣金率", "用于计算参加活动新增的扣费。"),
     "creator_commission_rate": ("达人佣金", "若通过联盟达人销售，需要计入真实成本。"),
@@ -86,7 +87,7 @@ class PromotionParserService:
 
     @staticmethod
     def generate_missing_field_suggestions(recognized: dict[str, Any]) -> list[dict[str, str]]:
-        return [{"field": key, "label": label, "reason": reason, "default_action": "采用商品平台配置或 0"} for key, (label, reason) in MISSING_HELP.items() if key not in recognized]
+        return [{"field": key, "label": label, "reason": reason, "default_action": "卖家确认无降价时为 0" if key == "discount_value" else "采用商品平台配置或 0"} for key, (label, reason) in MISSING_HELP.items() if key not in recognized]
 
     def detect_platform(self, text: str) -> str:
         lower = text.lower()
@@ -105,11 +106,12 @@ class PromotionParserService:
         if not text:
             return fields
         lines = [line.strip() for line in text.splitlines() if line.strip()]
-        title_match = re.search(r"(?:活动名称|promotion(?: name)?|campaign)\s*[:：-]\s*([^\n]+)", text, re.I)
+        title_match = re.search(r"(?:^|\n)\s*(?:活动名称|promotion name|campaign name)\s*[:：-]\s*([^\n]+)", text, re.I)
         fields["activity_name"] = title_match.group(1).strip() if title_match else (lines[0][:120] if lines else "未命名活动")
-        discount = re.search(r"(?:折扣|discount|off)\D{0,20}(\d+(?:\.\d+)?)\s*%", text, re.I)
+        discount = next((match for match in re.finditer(r"(?:折扣(?:要求)?|discount)\s*[:：]?\s*(\d+(?:\.\d+)?)\s*%", text, re.I)
+                         if not re.search(r"(?:platform|平台|platform-funded|平台出资)\s*$", text[max(0, match.start()-30):match.start()], re.I)), None)
         if not discount:
-            discount = re.search(r"(\d+(?:\.\d+)?)\s*%\s*(?:折扣|discount|off)", text, re.I)
+            discount = re.search(r"(\d+(?:\.\d+)?)\s*%\s*off\b", text, re.I)
         if discount:
             fields.update(discount_type="percentage", discount_value=Decimal(discount.group(1)) / 100)
         patterns = {

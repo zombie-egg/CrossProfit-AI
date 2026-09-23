@@ -30,6 +30,14 @@ def test_tiktok_fixture_extraction():
     assert parsed.activity.start_date.isoformat() == "2026-06-01"
 
 
+def test_platform_funded_discount_is_not_seller_discount():
+    fields = PromotionParserService().extract_rule_candidates(
+        "US Smart Promotion\nPlatform discount 3.5% for shoppers. Seller Give: 4.5% fee during campaign periods."
+    )
+    assert "discount_value" not in fields
+    assert fields["activity_name"] == "US Smart Promotion"
+
+
 def test_amazon_fixture_extraction():
     parsed = PromotionParserService(FixtureScraper("amazon_activity.html")).parse(url="https://example.com")
     assert parsed.activity.platform == "amazon"
