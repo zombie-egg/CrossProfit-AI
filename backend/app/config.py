@@ -17,6 +17,8 @@ class Settings:
     database_url: str = os.getenv("CROSSPROFIT_DB_URL", f"sqlite:///{ROOT_DIR / 'data' / 'crossprofit.db'}")
     openai_api_key: str | None = os.getenv("OPENAI_API_KEY") or None
     openai_model: str = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
+    deepseek_api_key: str | None = os.getenv("DEEPSEEK_API_KEY") or None
+    deepseek_model: str = os.getenv("DEEPSEEK_MODEL", "deepseek-flash")
     risk_thresholds: tuple[tuple[str, Decimal], ...] = (
         ("HIGHLY_RECOMMENDED", Decimal("0.20")),
         ("RECOMMENDED", Decimal("0.10")),

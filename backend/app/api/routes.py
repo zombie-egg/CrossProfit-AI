@@ -13,6 +13,7 @@ from ..models import AnalysisResult as AnalysisRecord
 from ..models import Product, ProductPlatformConfig, PromotionActivity, ScenarioResult as ScenarioRecord
 from ..schemas.domain import ParsedPromotion, PlatformConfigInput, ProductInput, ProfitAnalysisRequest, ProfitResult, PromotionActivityInput
 from ..services.factories import request_from_models
+from ..services.llm import llm_status
 from ..services.export_service import ExportService
 from ..services.profit_engine import ProfitEngine
 from ..services.promotion_parser import PromotionParserService
@@ -25,6 +26,11 @@ router = APIRouter()
 @router.get("/health")
 def health():
     return {"status": "ok", "service": "CrossProfit AI"}
+
+
+@router.get("/ai/status")
+def ai_status():
+    return llm_status()
 
 
 @router.get("/products")

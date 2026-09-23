@@ -46,7 +46,7 @@ function NavList({ expanded, close }: { expanded: boolean; close?: () => void })
 
 function DesktopSidebar() {
   const [hovered, setHovered] = useState(false);
-  return <motion.aside animate={{ width: hovered ? 252 : 72 }} transition={{ duration: .2, ease: "easeOut" }} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)} className="fixed inset-y-0 left-0 z-40 hidden overflow-hidden bg-white/75 shadow-[12px_0_40px_-32px_rgba(15,23,42,0.45)] backdrop-blur-xl lg:flex lg:flex-col"><Brand expanded={hovered} /><NavList expanded={hovered} /><div className="p-3"><div className="flex items-center gap-3 rounded-lg bg-white/55 p-3"><span className="size-2 shrink-0 rounded-full bg-emerald-500" />{hovered && <div><div className="text-xs font-medium">System Ready</div><div className="text-[11px] text-slate-500">Demo · 规则模式</div></div>}</div></div></motion.aside>;
+  return <motion.aside animate={{ width: hovered ? 252 : 72 }} transition={{ duration: .2, ease: "easeOut" }} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)} className="fixed inset-y-0 left-0 z-40 hidden overflow-hidden bg-white/75 shadow-[12px_0_40px_-32px_rgba(15,23,42,0.45)] backdrop-blur-xl lg:flex lg:flex-col"><Brand expanded={hovered} /><NavList expanded={hovered} /><div className="p-3"><div className="flex items-center gap-3 rounded-lg bg-white/55 p-3"><span className="size-2 shrink-0 rounded-full bg-emerald-500" />{hovered && <div><div className="text-xs font-medium">System Ready</div><div className="text-[11px] text-slate-500">Demo · 利润引擎</div></div>}</div></div></motion.aside>;
 }
 
 function DemoDialog() {

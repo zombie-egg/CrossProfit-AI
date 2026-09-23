@@ -16,7 +16,7 @@
 - 规则驱动策略建议和多活动横向排名
 - CSV 与四 Sheet XLSX 报告
 - 中文 SaaS Next.js 比赛主界面、保留的 Streamlit 界面、FastAPI、SQLite 与离线演示数据
-- OpenAI 为可选增强；没有 API Key 时自动使用规则模式，绝不影响利润计算
+- DeepSeek 可选补充定性分析，OpenAI 可选辅助规则提取；没有 API Key 或调用失败时保留规则建议，利润计算始终由确定性引擎完成
 
 企业反馈的逐项答复、Easyboss 接口缺口与真实账单验证方案见 [docs/enterprise-feedback-plan.md](docs/enterprise-feedback-plan.md)。目前尚未取得真实卖家账单、访谈或 Easyboss 业务接口文档，不能将 Demo 结果视为真实业务验证。
 
@@ -54,13 +54,15 @@ macOS 已提供 `scripts/com.crossprofit.ai.plist`，可作为登录自启动服
 ```bash
 export OPENAI_API_KEY="..."      # 可选
 export OPENAI_MODEL="gpt-4.1-mini"
+export DEEPSEEK_API_KEY="..."    # 可选；若同时配置，优先使用 DeepSeek
+export DEEPSEEK_MODEL="deepseek-flash"
 export CROSSPROFIT_PORT=8501
 export CROSSPROFIT_API_PORT=8000
 export CROSSPROFIT_WEB_PORT=3000
 export NEXT_PUBLIC_API_URL="http://127.0.0.1:8000"
 ```
 
-当前版本读取进程环境变量。未配置 Key 时 UI 会明确显示“规则分析模式”。LLM 仅参与文本理解与文案增强；计算结果始终来自 Python 引擎。
+当前版本读取进程环境变量。未配置 Key 时 UI 会明确显示“规则分析模式”。DeepSeek 仅追加定性建议，不自动填充费用或改写利润数字；规则字段仍由传统解析器提取并需卖家核对。`GET /ai/status` 只返回服务端配置状态与模型名，不返回密钥。DeepSeek 请求仅发送计算结果摘要和原有建议；调用失败时退回规则建议。
 
 ## Demo Mode
 
