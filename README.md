@@ -6,6 +6,7 @@
 
 ## 核心功能
 
+- `/quick` 单品手动测算：无需 TikTok / ERP 接口权限；输入实际费用与来源后使用确定性引擎计算，预览不自动归档
 - TikTok Shop 与 Amazon 完整 Demo；Temu、SHEIN 可扩展 Adapter
 - URL 安全读取、HTML 正文提取、规则结构化解析、抓取失败智能补录
 - 商品本体与多平台成本配置分离
@@ -16,6 +17,8 @@
 - CSV 与四 Sheet XLSX 报告
 - 中文 SaaS Next.js 比赛主界面、保留的 Streamlit 界面、FastAPI、SQLite 与离线演示数据
 - OpenAI 为可选增强；没有 API Key 时自动使用规则模式，绝不影响利润计算
+
+企业反馈的逐项答复、Easyboss 接口缺口与真实账单验证方案见 [docs/enterprise-feedback-plan.md](docs/enterprise-feedback-plan.md)。目前尚未取得真实卖家账单、访谈或 Easyboss 业务接口文档，不能将 Demo 结果视为真实业务验证。
 
 ## 快速启动（比赛主界面）
 

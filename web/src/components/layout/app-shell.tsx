@@ -15,12 +15,13 @@ import { Component as InfiniteGrid } from "@/components/ui/the-infinite-grid";
 import { cn, money, platformName } from "@/lib/utils";
 
 const primary = [
-  ["/", "Dashboard", LayoutDashboard], ["/analysis", "活动分析", Calculator], ["/comparison", "活动对比", BarChart3],
+  ["/", "Dashboard", LayoutDashboard], ["/quick", "单品测算", Calculator], ["/analysis", "活动分析", Calculator], ["/comparison", "活动对比", BarChart3],
   ["/products", "商品管理", Package], ["/history", "历史记录", History],
 ] as const;
 const secondary = [["/exports", "导出中心", Download], ["/settings", "设置", Settings]] as const;
 const pageCopy: Record<string, [string, string]> = {
   "/": ["Dashboard", "跨平台活动盈利概览"],
+  "/quick": ["单品测算", "手动填入实际成本和费率，先算清单件利润"],
   "/analysis": ["活动分析", "计算活动真实利润，并识别隐藏成本风险"],
   "/comparison": ["活动对比", "用统一口径判断哪个活动更值得参加"],
   "/products": ["商品管理", "集中管理商品成本和不同平台费用结构"],
