@@ -20,6 +20,8 @@
 
 企业反馈的逐项答复、Easyboss 接口缺口与真实账单验证方案见 [docs/enterprise-feedback-plan.md](docs/enterprise-feedback-plan.md)。目前尚未取得真实卖家账单、访谈或 Easyboss 业务接口文档，不能将 Demo 结果视为真实业务验证。
 
+首次使用可按 [docs/how-to-use.md](docs/how-to-use.md) 操作；它说明单品测算与活动分析的分工，以及商品、平台费用配置、活动规则和归档之间的关系。
+
 ## 快速启动（比赛主界面）
 
 要求 Python 3.11+ 与 Node.js 18+。
