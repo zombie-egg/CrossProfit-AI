@@ -1,4 +1,4 @@
-import type { AnalysisRun, BootstrapData, HistoryItem, ParsedPromotion, PlatformConfig, Product, ProductInput, ProfitAnalysisRequest } from "@/types";
+import type { AnalysisRun, BootstrapData, HistoricalMetrics, HistoryItem, ParsedPromotion, PlatformConfig, Product, ProductInput, ProfitAnalysisRequest, ResearchReport } from "@/types";
 
 export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "/api";
 
@@ -33,6 +33,7 @@ export const api = {
   createActivity: (productId: number, payload: ProfitAnalysisRequest["activity"]) =>
     request<{ id: number; product_id: number }>(`/activities?product_id=${productId}`, { method: "POST", body: JSON.stringify(payload) }),
   profit: (payload: ProfitAnalysisRequest) => request<AnalysisRun["result"]>("/analysis/profit", { method: "POST", body: JSON.stringify(payload) }),
+  research: (analysis: ProfitAnalysisRequest, historical: HistoricalMetrics, evidence_urls: string[]) => request<ResearchReport>("/analysis/research", { method: "POST", body: JSON.stringify({ analysis, historical, evidence_urls }) }),
   compare: (payloads: ProfitAnalysisRequest[]) => request<AnalysisRun["result"][]>("/analysis/compare", { method: "POST", body: JSON.stringify(payloads) }),
   runAnalysis: (payload: ProfitAnalysisRequest, productId?: number, activityId?: number) => {
     const params = new URLSearchParams();

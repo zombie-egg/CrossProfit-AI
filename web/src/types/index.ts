@@ -128,6 +128,24 @@ export interface AnalysisRun {
   recommendations: string[];
 }
 
+export interface HistoricalMetrics {
+  period: string;
+  visitors: number | null;
+  orders: number | null;
+  returns: number | null;
+  source: string;
+}
+
+export interface ResearchReport {
+  provider: "deepseek" | "rules";
+  historical: HistoricalMetrics & { conversion_rate?: number; return_rate?: number };
+  sources: Array<{ url: string; title: string }>;
+  discovered_sources: Array<{ url: string; title: string }>;
+  warnings: string[];
+  missing_data: string[];
+  dimensions: Array<{ name: string; finding: string; evidence: string; status: "verified" | "assumption" | "missing"; action: string }>;
+}
+
 export interface DemoCase {
   id: number;
   product_id: number;

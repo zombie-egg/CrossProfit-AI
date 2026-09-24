@@ -18,6 +18,7 @@ from ..services.export_service import ExportService
 from ..services.profit_engine import ProfitEngine
 from ..services.promotion_parser import PromotionParserService
 from ..services.scenario_engine import ScenarioEngine
+from ..services.research_analysis import ResearchRequest, research_analysis
 from ..services.strategy_engine import StrategyEngine
 
 router = APIRouter()
@@ -139,6 +140,11 @@ def parse_activity(url: str | None = None, raw_text: str = "", platform_hint: st
 @router.post("/analysis/profit", response_model=ProfitResult)
 def analyze_profit(payload: ProfitAnalysisRequest):
     return ProfitEngine().calculate(payload)
+
+
+@router.post("/analysis/research")
+def analyze_research(payload: ResearchRequest):
+    return research_analysis(payload)
 
 
 @router.post("/analysis/compare")
