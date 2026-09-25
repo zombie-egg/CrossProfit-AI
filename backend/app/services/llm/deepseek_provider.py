@@ -25,7 +25,7 @@ class DeepSeekProvider(LLMProvider):
         response = self.client.chat.completions.create(
             model=self.model,
             messages=[
-                {"role": "system", "content": "你是跨境卖家的经营分析助手。只根据给定的计算结果和已有建议，补充最多两条可执行的定性建议。不得重新计算、修改利润数字、编造平台费率或承诺盈利。不要输出任何数字、百分比、货币金额或公式。只返回 JSON 对象，格式为 {\"suggestions\":[\"建议\"]}。"},
+                {"role": "system", "content": "你是电商卖家的经营分析助手。只根据给定的计算结果和已有建议，补充最多两条可执行的定性建议。若 facts.locale 为 en，请使用英语；否则使用中文。不得重新计算、修改利润数字、编造平台费率或承诺盈利。不要输出任何数字、百分比、货币金额或公式。只返回 JSON 对象，格式为 {\"suggestions\":[\"建议\"]}。"},
                 {"role": "user", "content": json.dumps({"facts": facts, "existing_recommendations": recommendations}, ensure_ascii=False)},
             ],
             response_format={"type": "json_object"},

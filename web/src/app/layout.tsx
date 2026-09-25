@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { AppShell } from "@/components/layout/app-shell";
 import { DataProvider } from "@/components/data-provider";
+import { AuthProvider } from "@/components/auth-provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Anton, Inter, ZCOOL_QingKe_HuangYou } from "next/font/google";
 import { cn } from "@/lib/utils";
@@ -20,7 +21,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <html lang="zh-CN" className={cn("font-sans", inter.variable, geometricChinese.variable, posterEnglish.variable)}>
       <body>
         <TooltipProvider delay={100}>
-          <DataProvider><AppShell>{children}</AppShell></DataProvider>
+          <AuthProvider><DataProvider><AppShell>{children}</AppShell></DataProvider></AuthProvider>
         </TooltipProvider>
       </body>
     </html>

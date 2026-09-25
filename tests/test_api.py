@@ -1,107 +1,118 @@
-from io import BytesIO
+from __future__ import annotations
 
+import pytest
+from datetime import timedelta
 from fastapi.testclient import TestClient
-from openpyxl import load_workbook
-from backend.app.database import SessionLocal
-from backend.app.models import AnalysisResult, PromotionActivity
+from sqlalchemy import create_engine, select
+from sqlalchemy.orm import Session
+from sqlalchemy.pool import StaticPool
 
+from backend.app.api import auth
+from backend.app.database import get_db
 from backend.app.main import app
+from backend.app.models import Base, PlatformConnection, VerificationCode
 
 
-def test_health():
-    with TestClient(app) as client:
-        response = client.get("/health")
+@pytest.fixture
+def clients(monkeypatch):
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    Base.metadata.create_all(engine)
+    def test_db():
+        with Session(engine) as session:
+            yield session
+    app.dependency_overrides[get_db] = test_db
+    sent: dict[str, str] = {}
+    monkeypatch.setattr(auth, "_send_code", lambda email, code, purpose: sent.__setitem__(email, code))
+    try:
+        with TestClient(app) as first, TestClient(app) as second:
+            yield first, second, sent, engine
+    finally:
+        app.dependency_overrides.clear()
+        engine.dispose()
+
+
+def register(client: TestClient, sent: dict[str, str], email: str):
+    assert client.post("/auth/code", json={"email": email, "purpose": "register"}).status_code == 200
+    response = client.post("/auth/register", json={"email": email, "code": sent[email], "password": "strong-pass-123"})
     assert response.status_code == 200
-    assert response.json()["status"] == "ok"
+    assert response.cookies.get(auth.COOKIE_NAME)
+    return response.json()
 
 
-def test_products_seeded():
-    with TestClient(app) as client:
-        response = client.get("/products")
-    assert response.status_code == 200
-    assert len(response.json()) >= 3
+def test_auth_and_password_recovery(clients):
+    first, _, sent, engine = clients
+    assert first.get("/health").status_code == 200
+    assert first.get("/products").status_code == 401
+    account = register(first, sent, "a@example.com")
+    assert first.get("/auth/me").json()["id"] == account["id"]
+    assert first.put("/auth/locale", json={"locale": "en"}).json()["locale"] == "en"
+    assert first.post("/auth/logout").status_code == 200
+    assert first.get("/products").status_code == 401
+    assert first.post("/auth/login", json={"email": "a@example.com", "password": "wrong"}).status_code == 401
+    assert first.post("/auth/login", json={"email": "a@example.com", "password": "strong-pass-123"}).status_code == 200
+    with Session(engine) as db:
+        row = db.scalar(select(VerificationCode).where(VerificationCode.email == "a@example.com"))
+        assert row
+        row.sent_at -= timedelta(seconds=61)
+        db.commit()
+    assert first.post("/auth/code", json={"email": "a@example.com", "purpose": "reset"}).status_code == 200
+    assert first.post("/auth/reset-password", json={"email": "a@example.com", "code": sent["a@example.com"], "password": "new-password-456"}).status_code == 200
+    assert first.post("/auth/login", json={"email": "a@example.com", "password": "strong-pass-123"}).status_code == 401
+    assert first.post("/auth/login", json={"email": "a@example.com", "password": "new-password-456"}).status_code == 200
 
 
-def test_modern_ui_bootstrap_and_combined_analysis():
-    with TestClient(app) as client:
-        bootstrap = client.get("/ui/bootstrap")
-        assert bootstrap.status_code == 200
-        data = bootstrap.json()
-        assert len(data["products"]) >= 3
-        assert len(data["cases"]) >= 3
-        case = data["cases"][0]
-        response = client.post(
-            f"/analysis/run?product_id={case['product_id']}&activity_id={case['id']}",
-            json=case["request"],
-        )
-        analysis_id = response.json()["analysis_id"]
-        exported = client.get(f"/export/{analysis_id}?format=xlsx")
-    assert response.status_code == 200
-    result = response.json()
-    assert result["result"]["unit_profit"] == case["result"]["unit_profit"]
-    assert len(result["scenarios"]) == 3
-    assert result["recommendations"]
-    assert result["analysis_id"] is not None
-    assert exported.status_code == 200
-    workbook = load_workbook(BytesIO(exported.content), read_only=True)
-    assert workbook.sheetnames == ["Summary", "Cost Breakdown", "Scenario Analysis", "Recommendations"]
-    # This integration test persists briefly to verify history/export, then cleans up
-    # so repeated test runs never distort real Dashboard statistics.
-    with SessionLocal() as session:
-        record = session.get(AnalysisResult, analysis_id)
-        if record:
-            session.delete(record)
-            session.commit()
+def test_merchant_isolation_and_multiple_platform_connections(clients):
+    first, second, sent, engine = clients
+    register(first, sent, "a@example.com")
+    register(second, sent, "b@example.com")
+    product = {"name": "同款商品", "sku": "SKU-1", "purchase_cost": "8", "packaging_cost": "1", "weight_kg": "0", "volume_cm3": "0", "currency": "USD"}
+    a_product = first.post("/products", json=product)
+    b_product = second.post("/products", json=product)
+    assert a_product.status_code == b_product.status_code == 201
+    a_id, b_id = a_product.json()["id"], b_product.json()["id"]
+    assert a_id != b_id
+    assert first.get(f"/products/{b_id}").status_code == 404
+    assert first.put(f"/products/{b_id}", json=product).status_code == 404
+    assert first.delete(f"/products/{b_id}").status_code == 404
+    assert [x["id"] for x in first.get("/ui/bootstrap").json()["products"]] == [a_id]
+    assert [x["id"] for x in second.get("/ui/bootstrap").json()["products"]] == [b_id]
+
+    credentials = {"platform": "taobao", "label": "旗舰店", "shop_id": "shop-1", "app_key": "private-key", "app_secret": "private-secret"}
+    connection = first.post("/connections", json=credentials)
+    assert connection.status_code == 201
+    assert "private-key" not in connection.text
+    assert second.get("/connections").json() == []
+    assert first.post("/connections", json={**credentials, "platform": "douyin"}).status_code == 201
+    assert len(first.get("/connections").json()) == 2
+    with Session(engine) as db:
+        stored = db.scalar(select(PlatformConnection).where(PlatformConnection.id == connection.json()["id"]))
+        assert stored and stored.app_key_encrypted != "private-key"
+    assert second.delete(f"/connections/{connection.json()['id']}").status_code == 404
 
 
-def test_preview_does_not_persist_and_archive_updates_history():
-    with TestClient(app) as client:
-        case = client.get("/ui/bootstrap").json()["cases"][0]
-        before = client.get("/analysis").json()
-
-        preview = client.post("/analysis/run", json=case["request"])
-        assert preview.status_code == 200
-        assert preview.json()["analysis_id"] is None
-        assert len(client.get("/analysis").json()) == len(before)
-
-        archived = client.post(
-            f"/analysis/archive?product_id={case['product_id']}&activity_id={case['id']}",
-            json=case["request"],
-        )
-        assert archived.status_code == 200
-        archived_data = archived.json()
-        assert archived_data["analysis_id"] is not None
-        assert archived_data["activity_id"] == case["id"]
-        updated_history = client.get("/analysis").json()
-        assert len(updated_history) == len(before) + 1
-        assert updated_history[0]["id"] == archived_data["analysis_id"]
-        assert updated_history[0]["cost_drivers"]
-        assert all(float(item["amount"]) > 0 for item in updated_history[0]["cost_drivers"])
-
-    with SessionLocal() as session:
-        record = session.get(AnalysisResult, archived_data["analysis_id"])
-        if record:
-            session.delete(record)
-            session.commit()
+def test_password_login_rate_limit(clients):
+    first, _, sent, _ = clients
+    register(first, sent, "limited@example.com")
+    first.post("/auth/logout")
+    for _ in range(10):
+        assert first.post("/auth/login", json={"email": "limited@example.com", "password": "wrong"}).status_code == 401
+    assert first.post("/auth/login", json={"email": "limited@example.com", "password": "strong-pass-123"}).status_code == 429
 
 
-def test_archive_new_activity_is_atomic_and_visible():
-    with TestClient(app) as client:
-        case = client.get("/ui/bootstrap").json()["cases"][0]
-        payload = case["request"]
-        payload["activity"] = {**payload["activity"], "activity_name": "归档联调测试活动"}
-        archived = client.post(f"/analysis/archive?product_id={case['product_id']}", json=payload)
-        assert archived.status_code == 200
-        archived_data = archived.json()
-        history = client.get("/analysis").json()
-        assert any(item["id"] == archived_data["analysis_id"] for item in history)
-
-    with SessionLocal() as session:
-        record = session.get(AnalysisResult, archived_data["analysis_id"])
-        activity = session.get(PromotionActivity, archived_data["activity_id"])
-        if record:
-            session.delete(record)
-            session.flush()
-        if activity:
-            session.delete(activity)
-        session.commit()
+def test_archive_and_export_require_owner(clients):
+    first, second, sent, _ = clients
+    register(first, sent, "a@example.com")
+    register(second, sent, "b@example.com")
+    product = {"name": "测试商品", "sku": "TEST", "purchase_cost": "8", "packaging_cost": "0", "weight_kg": "0", "volume_cm3": "0", "currency": "USD"}
+    product_id = first.post("/products", json=product).json()["id"]
+    config = {"platform": "taobao", "original_price": "20", "shipping_cost": "2", "platform_commission_rate": "0.05", "return_rate": "0.08"}
+    assert first.post(f"/products/{product_id}/platform-configs", json=config).status_code == 201
+    request = {"product": product, "platform_config": config, "activity": {"platform": "taobao", "activity_name": "测试活动", "estimated_sales": 20}}
+    archived = first.post(f"/analysis/archive?product_id={product_id}", json=request)
+    assert archived.status_code == 200
+    record_id = archived.json()["analysis_id"]
+    assert first.get(f"/analysis/{record_id}").status_code == 200
+    assert first.get(f"/export/{record_id}").status_code == 200
+    assert second.get(f"/analysis/{record_id}").status_code == 404
+    assert second.get(f"/export/{record_id}").status_code == 404
+    assert second.post(f"/analysis/archive?product_id={product_id}", json=request).status_code == 404

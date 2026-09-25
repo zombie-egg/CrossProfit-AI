@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from io import BytesIO
+import secrets
 
 import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException
@@ -11,6 +12,8 @@ from sqlalchemy.orm import Session, selectinload
 from ..database import get_db
 from ..models import AnalysisResult as AnalysisRecord
 from ..models import Product, ProductPlatformConfig, PromotionActivity, ScenarioResult as ScenarioRecord
+from ..models import HistoricalMetric, Merchant, PlatformConnection
+from .auth import decrypt_secret, require_merchant
 from ..schemas.domain import ParsedPromotion, PlatformConfigInput, ProductInput, ProfitAnalysisRequest, ProfitResult, PromotionActivityInput
 from ..services.factories import request_from_models
 from ..services.llm import llm_status
@@ -21,37 +24,40 @@ from ..services.scenario_engine import ScenarioEngine
 from ..services.research_analysis import ResearchRequest, research_analysis
 from ..services.strategy_engine import StrategyEngine
 
-router = APIRouter()
+public_router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_merchant)])
 
 
-@router.get("/health")
+@public_router.get("/health")
 def health():
     return {"status": "ok", "service": "CrossProfit AI"}
 
 
 @router.get("/ai/status")
-def ai_status():
+def ai_status(merchant: Merchant = Depends(require_merchant)):
+    if merchant.deepseek_key_encrypted:
+        return {"provider": "deepseek", "model": "merchant", "configured": True}
     return llm_status()
 
 
 @router.get("/products")
-def products(db: Session = Depends(get_db)):
-    rows = db.scalars(select(Product).options(selectinload(Product.platform_configs))).all()
-    return [{"id": p.id, "name": p.name, "sku": p.sku, "purchase_cost": str(p.purchase_cost), "packaging_cost": str(p.packaging_cost), "currency": p.currency, "platforms": [c.platform for c in p.platform_configs]} for p in rows]
+def products(db: Session = Depends(get_db), merchant: Merchant = Depends(require_merchant)):
+    rows = db.scalars(select(Product).where(Product.merchant_id == merchant.id).options(selectinload(Product.platform_configs))).all()
+    return [{"id": p.id, "name": p.name, "sku": p.seller_sku, "purchase_cost": str(p.purchase_cost), "packaging_cost": str(p.packaging_cost), "currency": p.currency, "platforms": [c.platform for c in p.platform_configs]} for p in rows]
 
 
 @router.post("/products", status_code=201)
-def create_product(payload: ProductInput, db: Session = Depends(get_db)):
-    if db.scalar(select(Product).where(Product.sku == payload.sku)):
+def create_product(payload: ProductInput, db: Session = Depends(get_db), merchant: Merchant = Depends(require_merchant)):
+    if db.scalar(select(Product).where(Product.merchant_id == merchant.id, Product.seller_sku == payload.sku)):
         raise HTTPException(409, "SKU 已存在")
-    row = Product(**payload.model_dump())
+    row = Product(**{key: value for key, value in payload.model_dump().items() if key != "sku"}, sku=secrets.token_hex(16), seller_sku=payload.sku, merchant_id=merchant.id)
     db.add(row); db.commit(); db.refresh(row)
     return {"id": row.id, **payload.model_dump(mode="json")}
 
 
 def _product_detail(row: Product):
     return {
-        "id": row.id, "name": row.name, "sku": row.sku, "purchase_cost": str(row.purchase_cost),
+        "id": row.id, "name": row.name, "sku": row.seller_sku, "purchase_cost": str(row.purchase_cost),
         "packaging_cost": str(row.packaging_cost), "weight_kg": str(row.weight_kg), "volume_cm3": str(row.volume_cm3),
         "currency": row.currency, "created_at": row.created_at.isoformat(),
         "platform_configs": [{column.name: (str(getattr(config, column.name)) if hasattr(getattr(config, column.name), "as_tuple") else getattr(config, column.name)) for column in ProductPlatformConfig.__table__.columns if column.name not in {"product_id"}} for config in row.platform_configs],
@@ -59,30 +65,30 @@ def _product_detail(row: Product):
 
 
 @router.get("/products/{product_id}")
-def product_detail(product_id: int, db: Session = Depends(get_db)):
-    row = db.scalar(select(Product).where(Product.id == product_id).options(selectinload(Product.platform_configs)))
+def product_detail(product_id: int, db: Session = Depends(get_db), merchant: Merchant = Depends(require_merchant)):
+    row = db.scalar(select(Product).where(Product.id == product_id, Product.merchant_id == merchant.id).options(selectinload(Product.platform_configs)))
     if not row:
         raise HTTPException(404, "商品不存在")
     return _product_detail(row)
 
 
 @router.put("/products/{product_id}")
-def update_product(product_id: int, payload: ProductInput, db: Session = Depends(get_db)):
-    row = db.get(Product, product_id)
+def update_product(product_id: int, payload: ProductInput, db: Session = Depends(get_db), merchant: Merchant = Depends(require_merchant)):
+    row = db.scalar(select(Product).where(Product.id == product_id, Product.merchant_id == merchant.id))
     if not row:
         raise HTTPException(404, "商品不存在")
-    duplicate = db.scalar(select(Product).where(Product.sku == payload.sku, Product.id != product_id))
+    duplicate = db.scalar(select(Product).where(Product.merchant_id == merchant.id, Product.seller_sku == payload.sku, Product.id != product_id))
     if duplicate:
         raise HTTPException(409, "SKU 已存在")
     for key, value in payload.model_dump().items():
-        setattr(row, key, value)
+        setattr(row, "seller_sku" if key == "sku" else key, value)
     db.commit()
     return {"id": row.id, **payload.model_dump(mode="json")}
 
 
 @router.post("/products/{product_id}/platform-configs", status_code=201)
-def save_platform_config(product_id: int, payload: PlatformConfigInput, db: Session = Depends(get_db)):
-    if not db.get(Product, product_id):
+def save_platform_config(product_id: int, payload: PlatformConfigInput, db: Session = Depends(get_db), merchant: Merchant = Depends(require_merchant)):
+    if not db.scalar(select(Product.id).where(Product.id == product_id, Product.merchant_id == merchant.id)):
         raise HTTPException(404, "商品不存在")
     row = db.scalar(select(ProductPlatformConfig).where(ProductPlatformConfig.product_id == product_id, ProductPlatformConfig.platform == payload.platform))
     if row is None:
@@ -95,8 +101,8 @@ def save_platform_config(product_id: int, payload: PlatformConfigInput, db: Sess
 
 
 @router.delete("/products/{product_id}", status_code=204)
-def delete_product(product_id: int, db: Session = Depends(get_db)):
-    row = db.get(Product, product_id)
+def delete_product(product_id: int, db: Session = Depends(get_db), merchant: Merchant = Depends(require_merchant)):
+    row = db.scalar(select(Product).where(Product.id == product_id, Product.merchant_id == merchant.id))
     if not row:
         raise HTTPException(404, "商品不存在")
     activity_ids = list(db.scalars(select(PromotionActivity.id).where(PromotionActivity.product_id == product_id)))
@@ -110,24 +116,24 @@ def delete_product(product_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/activities")
-def activities(db: Session = Depends(get_db)):
-    return [{"id": a.id, "product_id": a.product_id, "platform": a.platform, "activity_name": a.activity_name, "estimated_sales": a.estimated_sales} for a in db.scalars(select(PromotionActivity).order_by(PromotionActivity.created_at.desc())).all()]
+def activities(db: Session = Depends(get_db), merchant: Merchant = Depends(require_merchant)):
+    return [{"id": a.id, "product_id": a.product_id, "platform": a.platform, "activity_name": a.activity_name, "estimated_sales": a.estimated_sales} for a in db.scalars(select(PromotionActivity).where(PromotionActivity.merchant_id == merchant.id).order_by(PromotionActivity.created_at.desc())).all()]
 
 
 @router.get("/activities/{activity_id}")
-def activity_detail(activity_id: int, db: Session = Depends(get_db)):
-    row = db.get(PromotionActivity, activity_id)
+def activity_detail(activity_id: int, db: Session = Depends(get_db), merchant: Merchant = Depends(require_merchant)):
+    row = db.scalar(select(PromotionActivity).where(PromotionActivity.id == activity_id, PromotionActivity.merchant_id == merchant.id))
     if not row:
         raise HTTPException(404, "活动不存在")
     return {column.name: (str(getattr(row, column.name)) if hasattr(getattr(row, column.name), "as_tuple") else getattr(row, column.name)) for column in PromotionActivity.__table__.columns}
 
 
 @router.post("/activities", status_code=201)
-def create_activity(product_id: int, payload: PromotionActivityInput, db: Session = Depends(get_db)):
-    if not db.get(Product, product_id):
+def create_activity(product_id: int, payload: PromotionActivityInput, db: Session = Depends(get_db), merchant: Merchant = Depends(require_merchant)):
+    if not db.scalar(select(Product.id).where(Product.id == product_id, Product.merchant_id == merchant.id)):
         raise HTTPException(404, "商品不存在")
     parameters = {key: str(getattr(payload, key)) for key in ["platform_commission_rate", "extra_commission_rate", "creator_commission_rate", "shipping_subsidy", "seller_shipping_cost", "platform_subsidy", "coupon_amount", "return_rate_override", "registration_fee", "ad_budget", "creative_cost", "creator_fixed_fee"] if getattr(payload, key) is not None and getattr(payload, key) != 0}
-    row = PromotionActivity(product_id=product_id, platform=payload.platform, activity_name=payload.activity_name, activity_type=payload.activity_type, source_url=payload.source_url, start_date=payload.start_date, end_date=payload.end_date, discount_type=payload.discount_type, discount_value=payload.discount_value, estimated_sales=payload.estimated_sales, currency=payload.currency, raw_text=payload.raw_text, parse_confidence=payload.parse_confidence, missing_fields=payload.missing_fields, parameters=parameters)
+    row = PromotionActivity(product_id=product_id, merchant_id=merchant.id, platform=payload.platform, activity_name=payload.activity_name, activity_type=payload.activity_type, source_url=payload.source_url, start_date=payload.start_date, end_date=payload.end_date, discount_type=payload.discount_type, discount_value=payload.discount_value, estimated_sales=payload.estimated_sales, currency=payload.currency, raw_text=payload.raw_text, parse_confidence=payload.parse_confidence, missing_fields=payload.missing_fields, parameters=parameters)
     db.add(row); db.commit(); db.refresh(row)
     return {"id": row.id, "product_id": product_id}
 
@@ -143,8 +149,14 @@ def analyze_profit(payload: ProfitAnalysisRequest):
 
 
 @router.post("/analysis/research")
-def analyze_research(payload: ResearchRequest):
-    return research_analysis(payload)
+def analyze_research(payload: ResearchRequest, db: Session = Depends(get_db), merchant: Merchant = Depends(require_merchant)):
+    if payload.historical.visitors is None and payload.historical.orders is None and payload.historical.returns is None:
+        latest = db.scalar(select(HistoricalMetric).where(HistoricalMetric.merchant_id == merchant.id, HistoricalMetric.platform == payload.analysis.activity.platform).order_by(HistoricalMetric.id.desc()))
+        if latest:
+            payload.historical.period, payload.historical.visitors, payload.historical.orders, payload.historical.returns, payload.historical.source = latest.period, latest.visitors, latest.orders, latest.returns, latest.source
+    connections = db.scalars(select(PlatformConnection).where(PlatformConnection.merchant_id == merchant.id)).all()
+    context = {"locale": merchant.locale, "connected_platforms": [{"platform": row.platform, "label": row.label, "status": row.status} for row in connections]}
+    return research_analysis(payload, api_key=decrypt_secret(merchant.deepseek_key_encrypted), merchant_context=context)
 
 
 @router.post("/analysis/compare")
@@ -155,30 +167,30 @@ def compare(payloads: list[ProfitAnalysisRequest]):
 
 
 @router.post("/analysis/run")
-def run_analysis(payload: ProfitAnalysisRequest, product_id: int | None = None, activity_id: int | None = None, db: Session = Depends(get_db)):
+def run_analysis(payload: ProfitAnalysisRequest, product_id: int | None = None, activity_id: int | None = None, db: Session = Depends(get_db), merchant: Merchant = Depends(require_merchant)):
     result = ProfitEngine().calculate(payload)
     scenarios = ScenarioEngine().analyze(payload)
-    recommendations = StrategyEngine().generate(payload, result, scenarios)
+    recommendations = StrategyEngine(decrypt_secret(merchant.deepseek_key_encrypted)).generate(payload, result, scenarios, merchant.locale)
     analysis_id = None
-    if product_id is not None and activity_id is not None and db.get(Product, product_id) and db.get(PromotionActivity, activity_id):
-        record = AnalysisRecord(product_id=product_id, activity_id=activity_id, unit_profit=result.unit_profit, profit_margin=result.profit_margin, estimated_total_profit=result.estimated_total_profit, risk_level=result.risk_level, result_data={"result": result.model_dump(mode="json"), "scenarios": [item.model_dump(mode="json") for item in scenarios], "recommendations": recommendations})
+    if product_id is not None and activity_id is not None and db.scalar(select(Product.id).where(Product.id == product_id, Product.merchant_id == merchant.id)) and db.scalar(select(PromotionActivity.id).where(PromotionActivity.id == activity_id, PromotionActivity.merchant_id == merchant.id, PromotionActivity.product_id == product_id)):
+        record = AnalysisRecord(product_id=product_id, activity_id=activity_id, merchant_id=merchant.id, unit_profit=result.unit_profit, profit_margin=result.profit_margin, estimated_total_profit=result.estimated_total_profit, risk_level=result.risk_level, result_data={"result": result.model_dump(mode="json"), "scenarios": [item.model_dump(mode="json") for item in scenarios], "recommendations": recommendations})
         db.add(record); db.commit(); db.refresh(record); analysis_id = record.id
     return {"analysis_id": analysis_id, "result": result, "scenarios": scenarios, "recommendations": recommendations}
 
 
 @router.post("/analysis/archive")
-def archive_analysis(payload: ProfitAnalysisRequest, product_id: int, activity_id: int | None = None, db: Session = Depends(get_db)):
+def archive_analysis(payload: ProfitAnalysisRequest, product_id: int, activity_id: int | None = None, db: Session = Depends(get_db), merchant: Merchant = Depends(require_merchant)):
     """Persist an activity and its analysis atomically after the user confirms the preview."""
-    product = db.get(Product, product_id)
+    product = db.scalar(select(Product).where(Product.id == product_id, Product.merchant_id == merchant.id))
     if not product:
         raise HTTPException(404, "商品不存在")
     activity = db.get(PromotionActivity, activity_id) if activity_id is not None else None
-    if activity_id is not None and (activity is None or activity.product_id != product_id):
+    if activity_id is not None and (activity is None or activity.product_id != product_id or activity.merchant_id != merchant.id):
         raise HTTPException(404, "活动不存在或不属于当前商品")
 
     result = ProfitEngine().calculate(payload)
     scenarios = ScenarioEngine().analyze(payload)
-    recommendations = StrategyEngine().generate(payload, result, scenarios)
+    recommendations = StrategyEngine(decrypt_secret(merchant.deepseek_key_encrypted)).generate(payload, result, scenarios, merchant.locale)
     if activity is None:
         activity_payload = payload.activity
         parameters = {
@@ -192,6 +204,7 @@ def archive_analysis(payload: ProfitAnalysisRequest, product_id: int, activity_i
         }
         activity = PromotionActivity(
             product_id=product_id,
+            merchant_id=merchant.id,
             platform=activity_payload.platform,
             activity_name=activity_payload.activity_name,
             activity_type=activity_payload.activity_type,
@@ -213,6 +226,7 @@ def archive_analysis(payload: ProfitAnalysisRequest, product_id: int, activity_i
     record = AnalysisRecord(
         product_id=product_id,
         activity_id=activity.id,
+        merchant_id=merchant.id,
         unit_profit=result.unit_profit,
         profit_margin=result.profit_margin,
         estimated_total_profit=result.estimated_total_profit,
@@ -236,8 +250,8 @@ def archive_analysis(payload: ProfitAnalysisRequest, product_id: int, activity_i
 
 
 @router.get("/analysis")
-def analysis_history(db: Session = Depends(get_db)):
-    rows = db.execute(select(AnalysisRecord, Product, PromotionActivity).join(Product, Product.id == AnalysisRecord.product_id).join(PromotionActivity, PromotionActivity.id == AnalysisRecord.activity_id).order_by(AnalysisRecord.created_at.desc())).all()
+def analysis_history(db: Session = Depends(get_db), merchant: Merchant = Depends(require_merchant)):
+    rows = db.execute(select(AnalysisRecord, Product, PromotionActivity).join(Product, Product.id == AnalysisRecord.product_id).join(PromotionActivity, PromotionActivity.id == AnalysisRecord.activity_id).where(AnalysisRecord.merchant_id == merchant.id, Product.merchant_id == merchant.id, PromotionActivity.merchant_id == merchant.id).order_by(AnalysisRecord.created_at.desc())).all()
     history = []
     for record, product, activity in rows:
         result = (record.result_data or {}).get("result", {})
@@ -268,9 +282,9 @@ def analysis_history(db: Session = Depends(get_db)):
 
 
 @router.get("/ui/bootstrap")
-def ui_bootstrap(db: Session = Depends(get_db)):
-    products = db.scalars(select(Product).options(selectinload(Product.platform_configs)).order_by(Product.id)).all()
-    activities = db.scalars(select(PromotionActivity).order_by(PromotionActivity.id)).all()
+def ui_bootstrap(db: Session = Depends(get_db), merchant: Merchant = Depends(require_merchant)):
+    products = db.scalars(select(Product).where(Product.merchant_id == merchant.id).options(selectinload(Product.platform_configs)).order_by(Product.id)).all()
+    activities = db.scalars(select(PromotionActivity).where(PromotionActivity.merchant_id == merchant.id).order_by(PromotionActivity.id)).all()
     cases = []
     product_map = {item.id: item for item in products}
     for activity in activities:
@@ -285,16 +299,16 @@ def ui_bootstrap(db: Session = Depends(get_db)):
 
 
 @router.get("/analysis/{analysis_id}")
-def get_analysis(analysis_id: int, db: Session = Depends(get_db)):
-    row = db.get(AnalysisRecord, analysis_id)
+def get_analysis(analysis_id: int, db: Session = Depends(get_db), merchant: Merchant = Depends(require_merchant)):
+    row = db.scalar(select(AnalysisRecord).where(AnalysisRecord.id == analysis_id, AnalysisRecord.merchant_id == merchant.id))
     if not row:
         raise HTTPException(404, "分析记录不存在")
     return row.result_data
 
 
 @router.get("/export/{analysis_id}")
-def export_analysis(analysis_id: int, format: str = "xlsx", db: Session = Depends(get_db)):
-    row = db.get(AnalysisRecord, analysis_id)
+def export_analysis(analysis_id: int, format: str = "xlsx", db: Session = Depends(get_db), merchant: Merchant = Depends(require_merchant)):
+    row = db.scalar(select(AnalysisRecord).where(AnalysisRecord.id == analysis_id, AnalysisRecord.merchant_id == merchant.id))
     if not row:
         raise HTTPException(404, "分析记录不存在")
     payload = row.result_data or {}

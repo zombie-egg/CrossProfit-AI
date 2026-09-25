@@ -1,13 +1,16 @@
 # CrossProfit AI
 
-跨境电商促销活动盈利分析 AI 助手。它把活动规则、商品成本和平台费用统一成可追溯的财务口径，在卖家报名活动前回答：**扣掉所有真实成本后，这场活动到底赚不赚钱？**
+多平台商家活动盈利分析工作台。它把活动规则、商品成本和平台费用统一成可追溯的财务口径，在商家参加活动前回答：**扣掉所有真实成本后，这场活动到底赚不赚钱？**
 
 > 平台内置费率全部标记为 **DEMO DEFAULT**，仅用于离线演示，不代表 TikTok Shop、Amazon 或其他平台的当前官方费率。请按国家、站点、类目与卖家协议覆盖。
 
 ## 核心功能
 
 - `/quick` 单品手动测算：无需 TikTok / ERP 接口权限；输入实际费用与来源后使用确定性引擎计算，预览不自动归档
-- TikTok Shop 与 Amazon 完整 Demo；Temu、SHEIN 可扩展 Adapter
+- 独立商家账号；邮箱验证码注册、一次性验证码登录、密码登录和密码找回；商品、活动、分析和密钥按商家隔离
+- 一个商家账号保存多家淘宝、拼多多、抖音、闲鱼、TikTok Shop、Amazon、Temu、SHEIN 或妙手 ERP 店铺的连接配置；支持自定义平台标识
+- 中文和英文界面、商家独立的 DeepSeek API Key、按平台保存历史访客/订单/退货数据
+- TikTok Shop 与 Amazon 演示费率配置；其他平台由商家输入真实成本与费率
 - URL 安全读取、HTML 正文提取、规则结构化解析、抓取失败智能补录
 - 商品本体与多平台成本配置分离
 - Decimal 确定性盈利引擎：折扣、佣金、采购、包装、物流、关税、支付、汇损、退货、其他费用及补贴
@@ -15,7 +18,7 @@
 - 5 档风险结论、成本瀑布图、乐观/基准/悲观敏感性分析
 - 规则驱动策略建议和多活动横向排名
 - CSV 与四 Sheet XLSX 报告
-- 中文 SaaS Next.js 比赛主界面、保留的 Streamlit 界面、FastAPI、SQLite 与离线演示数据
+- 中英文 Next.js 界面、保留的 Streamlit 单机界面、FastAPI 与 SQLite
 - DeepSeek 可选补充定性分析，OpenAI 可选辅助规则提取；没有 API Key 或调用失败时保留规则建议，利润计算始终由确定性引擎完成
 
 企业反馈的逐项答复、妙手 ERP 接口与真实账单验证方案见 [docs/enterprise-feedback-plan.md](docs/enterprise-feedback-plan.md)。已找到公开业务接口文档，但尚未取得卖家授权、真实账单或访谈，不能将 Demo 结果视为真实业务验证。
@@ -35,7 +38,7 @@ cd web && npm install && cd ..
 python run.py
 ```
 
-浏览器打开 `http://127.0.0.1:3000`。统一入口会同时启动 Next.js 与 FastAPI（`http://127.0.0.1:8000`），首次运行自动创建 SQLite 并写入 Demo 数据。前端默认通过同源 `/api` 代理调用后端，不需要单独配置跨端口地址。
+浏览器打开 `http://127.0.0.1:3000`。统一入口会同时启动 Next.js 与 FastAPI（`http://127.0.0.1:8000`），首次运行自动创建 SQLite。前端默认通过同源 `/api` 代理调用后端。注册前须配置 QQ 邮箱授权码；本机调试时也可在测试中替换邮件发送器。
 
 也可运行：
 
@@ -58,17 +61,23 @@ export OPENAI_API_KEY="..."      # 可选
 export OPENAI_MODEL="gpt-4.1-mini"
 export DEEPSEEK_API_KEY="..."    # 可选；若同时配置，优先使用 DeepSeek
 export DEEPSEEK_MODEL="deepseek-flash"
+export CROSSPROFIT_SECRET_KEY="<持久随机密钥>"
+export CROSSPROFIT_COOKIE_SECURE=0 # 生产 HTTPS 环境设为 1
+export QQ_EMAIL="<发件 QQ 邮箱>"
+export QQ_EMAIL_AUTH_CODE="<QQ 邮箱 SMTP 授权码>"
 export CROSSPROFIT_PORT=8501
 export CROSSPROFIT_API_PORT=8000
 export CROSSPROFIT_WEB_PORT=3000
 export NEXT_PUBLIC_API_URL="http://127.0.0.1:8000"
 ```
 
-当前版本读取进程环境变量。未配置 Key 时 UI 会明确显示“规则分析模式”。DeepSeek 仅追加定性建议，不自动填充费用或改写利润数字；规则字段仍由传统解析器提取并需卖家核对。`GET /ai/status` 只返回服务端配置状态与模型名，不返回密钥。DeepSeek 请求仅发送计算结果摘要和原有建议；调用失败时退回规则建议。
+生产环境必须配置持久的 `CROSSPROFIT_SECRET_KEY` 和 HTTPS Cookie。可在登录后的“设置”中保存商家自己的 DeepSeek Key；凭据在数据库中加密保存，接口只返回配置状态。DeepSeek 会结合已输入的商家历史数据、可读取的公开网页与活动规则进行定性分析；利润数仍由确定性引擎计算。公开网页不含卖家私有的往年访客、订单和退货数据，未取得平台授权时必须从卖家账单录入。建议定期备份数据库和密钥；丢失密钥会使已保存的连接凭据无法解密。
+
+“平台连接”目前只保存并隔离商家凭据，状态为“凭据已保存”，不表示平台授权已经通过或历史报表已自动同步。淘宝、拼多多、抖音、闲鱼等平台各自要求相应开放平台应用、接口权限和店铺授权；这些未获授权的接口不会伪造同步结果。活动费率仍以商家核对后的站点、类目和协议为准。
 
 ## Demo Mode
 
-在顶部点击“加载演示案例”，或进入“活动分析”后选择 Demo：
+本机可通过测试数据生成器体验以下案例。线上新注册商家不会自动看到其他账号或旧演示数据：
 
 1. `TikTok Summer Mega Sale`：高流量、高佣金，利润安全边际被压缩。
 2. `Amazon Prime Promotion`：折扣适中，利润相对健康。
@@ -87,6 +96,8 @@ uvicorn backend.app.main:app --reload --port 8000
 接口包括：
 
 - `GET /health`
+- `POST /auth/code`、`POST /auth/register`、`POST /auth/login`、`POST /auth/login/code`、`POST /auth/reset-password`、`GET /auth/me`、`POST /auth/logout`
+- `GET/POST/PUT/DELETE /connections`、`GET /platform-catalog`、`GET/POST /historical-metrics`、`GET/PUT /ai/key`
 - `GET/POST /products`、`GET/PUT/DELETE /products/{id}`
 - `POST /products/{id}/platform-configs`
 - `GET/POST /activities`、`GET /activities/{id}`
@@ -174,7 +185,7 @@ crossprofit-ai/
 - 通用 HTTP 抓取不执行 JavaScript，不绕过登录、验证码或反爬。
 - 规则解析覆盖中英文常见折扣、佣金、销量和日期表达，不等同于生产级文档理解。
 - 当前单币种活动内计算，不进行实时汇率换算；汇损用配置比例估算。
-- 无用户/权限系统，定位为单机比赛 MVP。
+- 平台凭据管理和历史数据录入已上线；自动拉取店铺私有报表仍取决于每个平台的应用审批、授权和专属适配器。
 
 ## 截图占位
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 import time
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -26,6 +26,22 @@ def init_db() -> None:
     for attempt in range(4):
         try:
             Base.metadata.create_all(engine)
+            if engine.dialect.name == "sqlite":
+                with engine.begin() as connection:
+                    inspector = inspect(connection)
+                    for table, columns in {
+                        "products": {"merchant_id": "INTEGER", "seller_sku": "VARCHAR(64)"},
+                        "promotion_activities": {"merchant_id": "INTEGER"},
+                        "analysis_results": {"merchant_id": "INTEGER"},
+                    }.items():
+                        existing = {column["name"] for column in inspector.get_columns(table)}
+                        for name, column_type in columns.items():
+                            if name not in existing:
+                                connection.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {column_type}"))
+                    connection.execute(text("CREATE INDEX IF NOT EXISTS ix_products_merchant_id ON products (merchant_id)"))
+                    connection.execute(text("CREATE INDEX IF NOT EXISTS ix_promotion_activities_merchant_id ON promotion_activities (merchant_id)"))
+                    connection.execute(text("CREATE INDEX IF NOT EXISTS ix_analysis_results_merchant_id ON analysis_results (merchant_id)"))
+                    connection.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_products_merchant_seller_sku ON products (merchant_id, seller_sku)"))
             return
         except OperationalError as exc:
             if "already exists" not in str(exc).lower() or attempt == 3:

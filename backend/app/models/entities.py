@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import Date, DateTime, ForeignKey, Integer, JSON, Numeric, String, Text
+from sqlalchemy import Date, DateTime, ForeignKey, Integer, JSON, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -16,6 +16,8 @@ class Product(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(120))
     sku: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    seller_sku: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    merchant_id: Mapped[int | None] = mapped_column(ForeignKey("merchants.id"), nullable=True, index=True)
     purchase_cost: Mapped[Decimal] = mapped_column(Numeric(12, 4), default=0)
     packaging_cost: Mapped[Decimal] = mapped_column(Numeric(12, 4), default=0)
     weight_kg: Mapped[Decimal] = mapped_column(Numeric(10, 3), default=0)
@@ -51,6 +53,7 @@ class PromotionActivity(Base):
     __tablename__ = "promotion_activities"
     id: Mapped[int] = mapped_column(primary_key=True)
     product_id: Mapped[int | None] = mapped_column(ForeignKey("products.id"), nullable=True, index=True)
+    merchant_id: Mapped[int | None] = mapped_column(ForeignKey("merchants.id"), nullable=True, index=True)
     platform: Mapped[str] = mapped_column(String(40), index=True)
     activity_name: Mapped[str] = mapped_column(String(160))
     activity_type: Mapped[str] = mapped_column(String(50), default="promotion")
@@ -73,6 +76,7 @@ class AnalysisResult(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     product_id: Mapped[int] = mapped_column(ForeignKey("products.id"), index=True)
     activity_id: Mapped[int] = mapped_column(ForeignKey("promotion_activities.id"), index=True)
+    merchant_id: Mapped[int | None] = mapped_column(ForeignKey("merchants.id"), nullable=True, index=True)
     unit_profit: Mapped[Decimal] = mapped_column(Numeric(12, 2))
     profit_margin: Mapped[Decimal] = mapped_column(Numeric(9, 5))
     estimated_total_profit: Mapped[Decimal] = mapped_column(Numeric(14, 2))
@@ -93,3 +97,68 @@ class ScenarioResult(Base):
     assumptions: Mapped[dict] = mapped_column(JSON, default=dict)
     analysis: Mapped[AnalysisResult] = relationship(back_populates="scenarios")
 
+
+class Merchant(Base):
+    __tablename__ = "merchants"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    email: Mapped[str] = mapped_column(String(254), unique=True, index=True)
+    password_hash: Mapped[str] = mapped_column(Text)
+    locale: Mapped[str] = mapped_column(String(5), default="zh")
+    deepseek_key_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class VerificationCode(Base):
+    __tablename__ = "verification_codes"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    email: Mapped[str] = mapped_column(String(254), index=True)
+    purpose: Mapped[str] = mapped_column(String(20))
+    code_hash: Mapped[str] = mapped_column(String(64))
+    expires_at: Mapped[datetime] = mapped_column(DateTime)
+    sent_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    consumed: Mapped[bool] = mapped_column(default=False)
+
+
+class MerchantSession(Base):
+    __tablename__ = "merchant_sessions"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    merchant_id: Mapped[int] = mapped_column(ForeignKey("merchants.id", ondelete="CASCADE"), index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class LoginFailure(Base):
+    __tablename__ = "login_failures"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    email: Mapped[str] = mapped_column(String(254), index=True)
+    attempted_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class PlatformConnection(Base):
+    __tablename__ = "platform_connections"
+    __table_args__ = (UniqueConstraint("merchant_id", "platform", "label", name="uq_merchant_platform_label"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    merchant_id: Mapped[int] = mapped_column(ForeignKey("merchants.id", ondelete="CASCADE"), index=True)
+    platform: Mapped[str] = mapped_column(String(64))
+    label: Mapped[str] = mapped_column(String(120))
+    shop_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    app_key_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
+    app_secret_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
+    access_token_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(32), default="credentials_saved")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class HistoricalMetric(Base):
+    __tablename__ = "historical_metrics"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    merchant_id: Mapped[int] = mapped_column(ForeignKey("merchants.id", ondelete="CASCADE"), index=True)
+    platform: Mapped[str] = mapped_column(String(64), index=True)
+    period: Mapped[str] = mapped_column(String(100))
+    visitors: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    orders: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    returns: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    source: Mapped[str] = mapped_column(String(200))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

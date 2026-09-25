@@ -91,8 +91,16 @@ class PromotionParserService:
 
     def detect_platform(self, text: str) -> str:
         lower = text.lower()
-        if "tiktok" in lower or "抖音" in lower:
+        if "tiktok" in lower:
             return "tiktok_shop"
+        if "douyin" in lower or "抖音" in lower:
+            return "douyin"
+        if "taobao" in lower or "淘宝" in lower or "tmall" in lower or "天猫" in lower:
+            return "taobao"
+        if "pinduoduo" in lower or "拼多多" in lower:
+            return "pinduoduo"
+        if "xianyu" in lower or "闲鱼" in lower or "goofish" in lower:
+            return "xianyu"
         if "amazon" in lower or "prime" in lower or "亚马逊" in lower:
             return "amazon"
         if "temu" in lower:

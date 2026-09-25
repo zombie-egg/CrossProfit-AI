@@ -19,6 +19,10 @@ class Settings:
     openai_model: str = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
     deepseek_api_key: str | None = os.getenv("DEEPSEEK_API_KEY") or None
     deepseek_model: str = os.getenv("DEEPSEEK_MODEL", "deepseek-flash")
+    secret_key: str | None = os.getenv("CROSSPROFIT_SECRET_KEY") or None
+    cookie_secure: bool = os.getenv("CROSSPROFIT_COOKIE_SECURE", "0") == "1"
+    qq_email: str | None = os.getenv("QQ_EMAIL") or None
+    qq_email_auth_code: str | None = os.getenv("QQ_EMAIL_AUTH_CODE") or None
     risk_thresholds: tuple[tuple[str, Decimal], ...] = (
         ("HIGHLY_RECOMMENDED", Decimal("0.20")),
         ("RECOMMENDED", Decimal("0.10")),
