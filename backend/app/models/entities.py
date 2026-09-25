@@ -120,6 +120,16 @@ class VerificationCode(Base):
     consumed: Mapped[bool] = mapped_column(default=False)
 
 
+class CaptchaChallenge(Base):
+    __tablename__ = "captcha_challenges"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    answer_hash: Mapped[str] = mapped_column(String(64))
+    expires_at: Mapped[datetime] = mapped_column(DateTime)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    consumed: Mapped[bool] = mapped_column(default=False)
+
+
 class MerchantSession(Base):
     __tablename__ = "merchant_sessions"
     id: Mapped[int] = mapped_column(primary_key=True)

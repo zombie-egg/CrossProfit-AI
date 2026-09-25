@@ -7,7 +7,7 @@
 ## 核心功能
 
 - `/quick` 单品手动测算：无需 TikTok / ERP 接口权限；输入实际费用与来源后使用确定性引擎计算，预览不自动归档
-- 独立商家账号；邮箱验证码注册、一次性验证码登录、密码登录和密码找回；商品、活动、分析和密钥按商家隔离
+- 独立商家账号；邮箱验证码注册、一次性验证码登录、密码登录和密码找回；两种登录方式都要求一次性图片验证码；商品、活动、分析和密钥按商家隔离
 - 一个商家账号保存多家淘宝、拼多多、抖音、闲鱼、TikTok Shop、Amazon、Temu、SHEIN 或妙手 ERP 店铺的连接配置；支持自定义平台标识
 - 中文和英文界面、商家独立的 DeepSeek API Key、按平台保存历史访客/订单/退货数据
 - TikTok Shop 与 Amazon 演示费率配置；其他平台由商家输入真实成本与费率
@@ -96,7 +96,7 @@ uvicorn backend.app.main:app --reload --port 8000
 接口包括：
 
 - `GET /health`
-- `POST /auth/code`、`POST /auth/register`、`POST /auth/login`、`POST /auth/login/code`、`POST /auth/reset-password`、`GET /auth/me`、`POST /auth/logout`
+- `GET /auth/captcha`、`POST /auth/code`、`POST /auth/register`、`POST /auth/login`、`POST /auth/login/code`、`POST /auth/reset-password`、`GET /auth/me`、`POST /auth/logout`
 - `GET/POST/PUT/DELETE /connections`、`GET /platform-catalog`、`GET/POST /historical-metrics`、`GET/PUT /ai/key`
 - `GET/POST /products`、`GET/PUT/DELETE /products/{id}`
 - `POST /products/{id}/platform-configs`

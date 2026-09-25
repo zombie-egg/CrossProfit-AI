@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import io
 import re
 import secrets
 import smtplib
@@ -11,13 +12,14 @@ from email.message import EmailMessage
 
 from cryptography.fernet import Fernet
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from PIL import Image, ImageDraw, ImageFont
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from ..config import settings
 from ..database import get_db
-from ..models import LoginFailure, Merchant, MerchantSession, VerificationCode
+from ..models import CaptchaChallenge, LoginFailure, Merchant, MerchantSession, VerificationCode
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 SECRET = (settings.secret_key or secrets.token_urlsafe(48)).encode()
@@ -81,15 +83,21 @@ class CodeRequest(EmailPayload):
         return value
 
 
-class PasswordLogin(EmailPayload):
+class CaptchaAnswer(BaseModel):
+    captcha_token: str = Field(min_length=20, max_length=128)
+    captcha_answer: str = Field(min_length=5, max_length=5)
+
+
+class PasswordLogin(EmailPayload, CaptchaAnswer):
     password: str
 
 
-class CodeLogin(EmailPayload):
+class CodeLogin(EmailPayload, CaptchaAnswer):
     code: str = Field(min_length=6, max_length=6)
 
 
-class Register(CodeLogin):
+class Register(EmailPayload):
+    code: str = Field(min_length=6, max_length=6)
     password: str = Field(min_length=8, max_length=128)
 
 
@@ -134,6 +142,47 @@ def _consume_code(db: Session, email: str, purpose: str, code: str) -> None:
         raise HTTPException(400, "验证码无效或已过期")
     row.consumed = True
     db.flush()
+
+
+def _consume_captcha(db: Session, payload: CaptchaAnswer) -> None:
+    token_hash = hashlib.sha256(payload.captcha_token.encode()).hexdigest()
+    row = db.scalar(select(CaptchaChallenge).where(CaptchaChallenge.token_hash == token_hash))
+    if row is None or row.consumed or row.expires_at < utcnow() or row.attempts >= 5:
+        raise HTTPException(400, "图片验证码无效或已过期，请刷新图片")
+    row.attempts += 1
+    answer_hash = hmac.new(SECRET, f"{payload.captcha_token}:{payload.captcha_answer.upper()}".encode(), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(row.answer_hash, answer_hash):
+        db.commit()
+        raise HTTPException(400, "图片验证码错误")
+    row.consumed = True
+    db.flush()
+
+
+@router.get("/captcha")
+def create_captcha(response: Response, db: Session = Depends(get_db)):
+    db.execute(delete(CaptchaChallenge).where(CaptchaChallenge.expires_at < utcnow() - timedelta(days=1)))
+    alphabet = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"
+    answer = "".join(secrets.choice(alphabet) for _ in range(5))
+    token = secrets.token_urlsafe(32)
+    canvas = Image.new("RGB", (176, 56), "#eef4ff")
+    draw = ImageDraw.Draw(canvas)
+    for _ in range(6):
+        points = tuple(secrets.randbelow(size) for size in (176, 56, 176, 56))
+        draw.line(points, fill=(125 + secrets.randbelow(70), 140 + secrets.randbelow(60), 165 + secrets.randbelow(60)), width=1)
+    font = ImageFont.load_default(size=33)
+    for index, character in enumerate(answer):
+        color = (20 + secrets.randbelow(75), 35 + secrets.randbelow(70), 55 + secrets.randbelow(75))
+        draw.text((13 + index * 32, 5 + secrets.randbelow(8)), character, font=font, fill=color)
+    for _ in range(55):
+        draw.point((secrets.randbelow(176), secrets.randbelow(56)), fill=(90, 110, 145))
+    output = io.BytesIO()
+    canvas.save(output, format="PNG")
+    db.add(CaptchaChallenge(token_hash=hashlib.sha256(token.encode()).hexdigest(),
+                            answer_hash=hmac.new(SECRET, f"{token}:{answer}".encode(), hashlib.sha256).hexdigest(),
+                            expires_at=utcnow() + timedelta(minutes=5)))
+    db.commit()
+    response.headers["Cache-Control"] = "no-store"
+    return {"token": token, "image": "data:image/png;base64," + base64.b64encode(output.getvalue()).decode()}
 
 
 def _issue_session(db: Session, response: Response, merchant: Merchant) -> dict[str, str | int]:
@@ -189,6 +238,7 @@ def register(payload: Register, response: Response, db: Session = Depends(get_db
 
 @router.post("/login")
 def login(payload: PasswordLogin, response: Response, db: Session = Depends(get_db)):
+    _consume_captcha(db, payload)
     recent = db.scalar(select(func.count(LoginFailure.id)).where(LoginFailure.email == payload.email, LoginFailure.attempted_at > utcnow() - timedelta(minutes=15))) or 0
     if recent >= 10:
         raise HTTPException(429, "登录尝试过于频繁，请 15 分钟后重试")
@@ -202,6 +252,7 @@ def login(payload: PasswordLogin, response: Response, db: Session = Depends(get_
 
 @router.post("/login/code")
 def login_with_code(payload: CodeLogin, response: Response, db: Session = Depends(get_db)):
+    _consume_captcha(db, payload)
     merchant = db.scalar(select(Merchant).where(Merchant.email == payload.email))
     if merchant is None:
         raise HTTPException(401, "验证码无效或已过期")

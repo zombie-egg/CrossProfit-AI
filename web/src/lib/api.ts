@@ -15,10 +15,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   me: () => request<MerchantAccount>("/auth/me"),
+  captcha: () => request<{ token: string; image: string }>("/auth/captcha"),
   sendCode: (email: string, purpose: "register" | "login" | "reset") => request<{ sent: boolean }>("/auth/code", { method: "POST", body: JSON.stringify({ email, purpose }) }),
   register: (email: string, code: string, password: string) => request<MerchantAccount>("/auth/register", { method: "POST", body: JSON.stringify({ email, code, password }) }),
-  login: (email: string, password: string) => request<MerchantAccount>("/auth/login", { method: "POST", body: JSON.stringify({ email, password }) }),
-  codeLogin: (email: string, code: string) => request<MerchantAccount>("/auth/login/code", { method: "POST", body: JSON.stringify({ email, code }) }),
+  login: (email: string, password: string, captcha_token: string, captcha_answer: string) => request<MerchantAccount>("/auth/login", { method: "POST", body: JSON.stringify({ email, password, captcha_token, captcha_answer }) }),
+  codeLogin: (email: string, code: string, captcha_token: string, captcha_answer: string) => request<MerchantAccount>("/auth/login/code", { method: "POST", body: JSON.stringify({ email, code, captcha_token, captcha_answer }) }),
   resetPassword: (email: string, code: string, password: string) => request<MerchantAccount>("/auth/reset-password", { method: "POST", body: JSON.stringify({ email, code, password }) }),
   logout: () => request<{ ok: boolean }>("/auth/logout", { method: "POST" }),
   setLocale: (locale: "zh" | "en") => request<{ locale: string }>("/auth/locale", { method: "PUT", body: JSON.stringify({ locale }) }),

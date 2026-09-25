@@ -10,7 +10,7 @@ from sqlalchemy.pool import StaticPool
 from backend.app.api import auth
 from backend.app.database import get_db
 from backend.app.main import app
-from backend.app.models import Base, PlatformConnection, VerificationCode
+from backend.app.models import Base, CaptchaChallenge, PlatformConnection, VerificationCode
 
 
 @pytest.fixture
@@ -23,6 +23,7 @@ def clients(monkeypatch):
     app.dependency_overrides[get_db] = test_db
     sent: dict[str, str] = {}
     monkeypatch.setattr(auth, "_send_code", lambda email, code, purpose: sent.__setitem__(email, code))
+    monkeypatch.setattr(auth.secrets, "choice", lambda alphabet: "A")
     try:
         with TestClient(app) as first, TestClient(app) as second:
             yield first, second, sent, engine
@@ -39,6 +40,14 @@ def register(client: TestClient, sent: dict[str, str], email: str):
     return response.json()
 
 
+def password_login(client: TestClient, email: str, password: str, answer: str = "AAAAA"):
+    challenge = client.get("/auth/captcha")
+    assert challenge.status_code == 200
+    assert challenge.json()["image"].startswith("data:image/png;base64,")
+    return client.post("/auth/login", json={"email": email, "password": password,
+                                             "captcha_token": challenge.json()["token"], "captcha_answer": answer})
+
+
 def test_auth_and_password_recovery(clients):
     first, _, sent, engine = clients
     assert first.get("/health").status_code == 200
@@ -48,8 +57,8 @@ def test_auth_and_password_recovery(clients):
     assert first.put("/auth/locale", json={"locale": "en"}).json()["locale"] == "en"
     assert first.post("/auth/logout").status_code == 200
     assert first.get("/products").status_code == 401
-    assert first.post("/auth/login", json={"email": "a@example.com", "password": "wrong"}).status_code == 401
-    assert first.post("/auth/login", json={"email": "a@example.com", "password": "strong-pass-123"}).status_code == 200
+    assert password_login(first, "a@example.com", "wrong").status_code == 401
+    assert password_login(first, "a@example.com", "strong-pass-123").status_code == 200
     with Session(engine) as db:
         row = db.scalar(select(VerificationCode).where(VerificationCode.email == "a@example.com"))
         assert row
@@ -57,8 +66,8 @@ def test_auth_and_password_recovery(clients):
         db.commit()
     assert first.post("/auth/code", json={"email": "a@example.com", "purpose": "reset"}).status_code == 200
     assert first.post("/auth/reset-password", json={"email": "a@example.com", "code": sent["a@example.com"], "password": "new-password-456"}).status_code == 200
-    assert first.post("/auth/login", json={"email": "a@example.com", "password": "strong-pass-123"}).status_code == 401
-    assert first.post("/auth/login", json={"email": "a@example.com", "password": "new-password-456"}).status_code == 200
+    assert password_login(first, "a@example.com", "strong-pass-123").status_code == 401
+    assert password_login(first, "a@example.com", "new-password-456").status_code == 200
 
 
 def test_merchant_isolation_and_multiple_platform_connections(clients):
@@ -95,8 +104,46 @@ def test_password_login_rate_limit(clients):
     register(first, sent, "limited@example.com")
     first.post("/auth/logout")
     for _ in range(10):
-        assert first.post("/auth/login", json={"email": "limited@example.com", "password": "wrong"}).status_code == 401
-    assert first.post("/auth/login", json={"email": "limited@example.com", "password": "strong-pass-123"}).status_code == 429
+        assert password_login(first, "limited@example.com", "wrong").status_code == 401
+    assert password_login(first, "limited@example.com", "strong-pass-123").status_code == 429
+
+
+def test_image_captcha_expires_and_cannot_be_reused(clients):
+    first, _, sent, engine = clients
+    register(first, sent, "captcha@example.com")
+    first.post("/auth/logout")
+    challenge = first.get("/auth/captcha").json()
+    payload = {"email": "captcha@example.com", "password": "strong-pass-123",
+               "captcha_token": challenge["token"], "captcha_answer": "WRONG"}
+    assert first.post("/auth/login", json=payload).status_code == 400
+    payload["captcha_answer"] = "AAAAA"
+    assert first.post("/auth/login", json=payload).status_code == 200
+    assert first.post("/auth/login", json=payload).status_code == 400
+    challenge = first.get("/auth/captcha").json()
+    with Session(engine) as db:
+        row = db.scalar(select(CaptchaChallenge).where(CaptchaChallenge.token_hash == auth.hashlib.sha256(challenge["token"].encode()).hexdigest()))
+        assert row
+        row.expires_at -= timedelta(minutes=6)
+        db.commit()
+    assert first.post("/auth/login", json={**payload, "captcha_token": challenge["token"]}).status_code == 400
+
+
+def test_one_time_code_login_requires_image_captcha(clients):
+    first, _, sent, engine = clients
+    register(first, sent, "otp@example.com")
+    first.post("/auth/logout")
+    with Session(engine) as db:
+        row = db.scalar(select(VerificationCode).where(VerificationCode.email == "otp@example.com"))
+        assert row
+        row.sent_at -= timedelta(seconds=61)
+        db.commit()
+    assert first.post("/auth/code", json={"email": "otp@example.com", "purpose": "login"}).status_code == 200
+    assert first.post("/auth/login/code", json={"email": "otp@example.com", "code": sent["otp@example.com"]}).status_code == 422
+    challenge = first.get("/auth/captcha").json()
+    payload = {"email": "otp@example.com", "code": sent["otp@example.com"],
+               "captcha_token": challenge["token"], "captcha_answer": "AAAAA"}
+    assert first.post("/auth/login/code", json=payload).status_code == 200
+    assert first.post("/auth/login/code", json=payload).status_code == 400
 
 
 def test_archive_and_export_require_owner(clients):
