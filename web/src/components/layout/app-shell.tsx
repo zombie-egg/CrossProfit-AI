@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { BarChart3, Calculator, Download, History, LayoutDashboard, Menu, Package, Settings, TrendingUp, PlugZap, LogOut } from "lucide-react";
+import { BarChart3, Calculator, Download, History, LayoutDashboard, Megaphone, Menu, Package, Settings, TrendingUp, PlugZap, LogOut } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
@@ -17,7 +17,7 @@ import { Component as InfiniteGrid } from "@/components/ui/the-infinite-grid";
 import { cn, money, platformName } from "@/lib/utils";
 
 const primary = [
-  ["/", "Dashboard", LayoutDashboard], ["/quick", "单品测算", Calculator], ["/analysis", "活动分析", Calculator], ["/comparison", "活动对比", BarChart3],
+  ["/", "Dashboard", LayoutDashboard], ["/quick", "单品测算", Calculator], ["/analysis", "活动分析", Megaphone], ["/comparison", "活动对比", BarChart3],
   ["/products", "商品管理", Package], ["/connections", "平台连接", PlugZap], ["/history", "历史记录", History],
 ] as const;
 const secondary = [["/exports", "导出中心", Download], ["/settings", "设置", Settings]] as const;
