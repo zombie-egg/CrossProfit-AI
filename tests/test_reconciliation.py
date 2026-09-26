@@ -118,3 +118,24 @@ def test_multi_unit_fees_and_sales_are_per_unit(base_request):
     assert rounded["formula_verdict"] == "PASS"
     assert rounded["diff_data"]["fee_diffs"][0]["reason"] == "ROUNDING"
     assert rounded["diff_data"]["fee_diffs"][0]["revenue_rounding_residual"] == "0.01"
+
+    lines[0].gross_revenue = Decimal("10.04")
+    lines[0].fee_items["Commission"] = Decimal("1.00")
+    rounded_failure = ReconciliationEngine().run(forecast.model_dump(mode="json"), lines, {"Commission": "平台佣金"})
+    fee_diff = rounded_failure["diff_data"]["fee_diffs"][0]
+    assert fee_diff["predicted"] == "1.02"
+    assert fee_diff["actual"] == "1.00"
+    assert fee_diff["revenue_rounding_residual"] == "-0.01"
+    assert fee_diff["reason"] == "RATE_ERROR"
+    assert fee_diff["formula_pass"] is False
+    assert rounded_failure["formula_verdict"] == "FAIL"
+
+    lines[0].quantity = 4
+    lines[0].gross_revenue = Decimal("40.00")
+    lines[0].fee_items["Commission"] = Decimal("4.00")
+    lines[0].subsidy_amount = Decimal("0.02")
+    subsidy_failure = ReconciliationEngine().run(forecast.model_dump(mode="json"), lines, {"Commission": "平台佣金"})
+    subsidy_diff = next(row for row in subsidy_failure["diff_data"]["fee_diffs"] if row["fee_item"] == "平台及物流补贴")
+    assert subsidy_diff["subsidy_rounding_residual"] == "-0.02"
+    assert subsidy_diff["formula_pass"] is False
+    assert subsidy_failure["formula_verdict"] == "FAIL"

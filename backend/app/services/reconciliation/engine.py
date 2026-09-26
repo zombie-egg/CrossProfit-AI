@@ -26,10 +26,10 @@ RATE_ITEMS = {"平台佣金", "活动额外佣金", "达人佣金", "支付手�
 VERIFIABLE_ITEMS = RATE_ITEMS | {"物流成本", "关税", "汇率损耗", "其他可变费用", "卖家优惠券", "平台及物流补贴"}
 
 
-def _reason(name: str, diff: Decimal, currency_mismatch: bool, refunded: bool, rounding_explained: bool = False) -> DiffReason:
+def _reason(name: str, diff: Decimal, currency_mismatch: bool, refunded: bool) -> DiffReason:
     if currency_mismatch:
         return DiffReason.FX
-    if abs(diff) <= Decimal("0.01") or rounding_explained:
+    if abs(diff) <= Decimal("0.01"):
         return DiffReason.ROUNDING
     if refunded and name in RATE_ITEMS:
         return DiffReason.REFUND_TIMING
@@ -96,7 +96,9 @@ class ReconciliationEngine:
             same_inputs.platform_config.original_price = unit_price
             same_inputs.activity.discount_type = "none"
             same_inputs.activity.discount_value = Decimal("0")
-            same_inputs.activity.platform_subsidy = money(subsidy / Decimal(qty))
+            unit_subsidy = money(subsidy / Decimal(qty))
+            subsidy_rounding_residual = subsidy - unit_subsidy * qty
+            same_inputs.activity.platform_subsidy = unit_subsidy
             same_inputs.activity.shipping_subsidy = Decimal("0")
             same_inputs.activity.return_rate_override = Decimal("1") if refund > 0 else Decimal("0")
             same_inputs.activity.estimated_sales = qty
@@ -111,23 +113,14 @@ class ReconciliationEngine:
                     continue
                 predicted = expected[name]
                 diff = actual - predicted
-                fee_rate = {
-                    "平台佣金": same_inputs.activity.platform_commission_rate if same_inputs.activity.platform_commission_rate is not None else same_inputs.platform_config.platform_commission_rate,
-                    "活动额外佣金": same_inputs.activity.extra_commission_rate,
-                    "达人佣金": same_inputs.activity.creator_commission_rate if same_inputs.activity.creator_commission_rate is not None else same_inputs.platform_config.creator_commission_rate,
-                    "支付手续费": same_inputs.platform_config.payment_fee_rate,
-                    "汇率损耗": same_inputs.platform_config.fx_loss_rate,
-                }.get(name)
-                if name == "关税" and same_inputs.platform_config.tariff_basis == "selling_price":
-                    fee_rate = same_inputs.platform_config.tariff_rate
-                rounding_explained = bool(rounding_residual and fee_rate is not None and abs(actual - money(gross * fee_rate)) <= Decimal("0.01"))
-                reason = _reason(name, diff, currency_mismatch, refund > 0, rounding_explained)
+                reason = _reason(name, diff, currency_mismatch, refund > 0)
                 differences.append({"order_id": order_id, "sku": sku, "fee_item": name,
                     "predicted": str(predicted), "actual": str(actual),
                     "absolute_diff": str(abs(diff).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)),
                     "relative_diff": str(rate(diff / predicted)) if predicted else None,
                     "reason": reason.value,
                     "revenue_rounding_residual": str(rounding_residual),
+                    "subsidy_rounding_residual": str(subsidy_rounding_residual),
                     "currency": actual_currency,
                     "formula_pass": not currency_mismatch and abs(diff) <= Decimal("0.01")})
         estimated = forecast.activity.estimated_sales
@@ -139,9 +132,9 @@ class ReconciliationEngine:
             "returned_units": returned_units,
             "note": "预测偏差独立于公式正确性；退款窗口未结束时退货率仍可能变化。有退款金额的订单 SKU 暂将全部件数计为退货。"}
         max_diff = max((Decimal(row["absolute_diff"]) for row in differences), default=Decimal("0"))
-        if any(not row["formula_pass"] and row["reason"] != DiffReason.ROUNDING.value for row in differences):
+        if any(not row["formula_pass"] for row in differences):
             verdict = "FAIL"
-        elif unmatched_orders or unmapped or unrecognized_columns or unverified_fees or not differences or any(not row["formula_pass"] for row in differences):
+        elif unmatched_orders or unmapped or unrecognized_columns or unverified_fees or not differences:
             verdict = "PARTIAL"
         else:
             verdict = "PASS"
