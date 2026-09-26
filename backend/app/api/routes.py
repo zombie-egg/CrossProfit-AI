@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from io import BytesIO
 from decimal import Decimal
+from datetime import date, timedelta
 import json
 import secrets
 from pathlib import Path
@@ -10,15 +11,16 @@ import pandas as pd
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 from sqlalchemy import delete, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from ..database import SNAPSHOT_CASCADE_KEY, get_db
 from ..config import settings
 from ..models import AnalysisResult as AnalysisRecord
-from ..models import ForecastSnapshot, Product, ProductPlatformConfig, PromotionActivity, ReconciliationReport, SettlementImport, ScenarioResult as ScenarioRecord
+from ..models import ForecastSnapshot, PricingTemplate, Product, ProductPlatformConfig, PromotionActivity, ReconciliationReport, SettlementImport, ScenarioResult as ScenarioRecord
 from ..models import Merchant
 from .auth import decrypt_secret, require_merchant
-from ..schemas.domain import ParsedPromotion, PlatformConfigInput, PortfolioRequest, ProductInput, ProfitAnalysisRequest, ProfitResult, PromotionActivityInput
+from ..schemas.domain import ParsedPromotion, PlatformConfigInput, PortfolioRequest, PricingTemplateInput, ProductInput, ProfitAnalysisRequest, ProfitResult, PromotionActivityInput, TargetPriceRequest, TargetPriceResult
 from ..services.factories import request_from_models
 from ..services.llm import llm_status
 from ..services.export_service import ExportService
@@ -279,6 +281,69 @@ def parse_activity(raw_text: str = "", platform_hint: str | None = None):
 @router.post("/analysis/profit", response_model=ProfitResult)
 def analyze_profit(payload: ProfitAnalysisRequest):
     return ProfitEngine().calculate(payload)
+
+
+@router.post("/analysis/target-price", response_model=TargetPriceResult)
+def analyze_target_price(payload: TargetPriceRequest):
+    return ProfitEngine().target_price(payload.request, payload.target)
+
+
+def _pricing_template_public(row: PricingTemplate) -> dict:
+    return {"id": row.id, "name": row.name, "platform": row.platform, "category": row.category,
+        "currency": row.currency, "target_mode": row.target_mode, "target_value": str(row.target_value),
+        "defaults": row.defaults, "rate_source": row.rate_source,
+        "rate_effective_date": row.rate_effective_date.isoformat(),
+        "created_at": row.created_at.isoformat(), "updated_at": row.updated_at.isoformat(),
+        "stale": row.rate_effective_date < date.today() - timedelta(days=settings.pricing_template_stale_days)}
+
+
+@router.get("/pricing-templates")
+def pricing_templates(db: Session = Depends(get_db), merchant: Merchant = Depends(require_merchant)):
+    rows = db.scalars(select(PricingTemplate).where(PricingTemplate.merchant_id == merchant.id).order_by(PricingTemplate.updated_at.desc())).all()
+    return [_pricing_template_public(row) for row in rows]
+
+
+@router.post("/pricing-templates", status_code=201)
+def create_pricing_template(payload: PricingTemplateInput, db: Session = Depends(get_db), merchant: Merchant = Depends(require_merchant)):
+    if db.scalar(select(PricingTemplate.id).where(PricingTemplate.merchant_id == merchant.id, PricingTemplate.name == payload.name)):
+        raise HTTPException(409, "模板名称已存在")
+    values = payload.model_dump()
+    values["defaults"] = payload.defaults.model_dump(mode="json")
+    row = PricingTemplate(merchant_id=merchant.id, **values)
+    db.add(row)
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(409, "模板名称已存在") from exc
+    db.refresh(row)
+    return _pricing_template_public(row)
+
+
+@router.put("/pricing-templates/{template_id}")
+def update_pricing_template(template_id: int, payload: PricingTemplateInput, db: Session = Depends(get_db), merchant: Merchant = Depends(require_merchant)):
+    row = db.scalar(select(PricingTemplate).where(PricingTemplate.id == template_id, PricingTemplate.merchant_id == merchant.id))
+    if row is None:
+        raise HTTPException(404, "定价模板不存在")
+    if db.scalar(select(PricingTemplate.id).where(PricingTemplate.merchant_id == merchant.id, PricingTemplate.name == payload.name, PricingTemplate.id != template_id)):
+        raise HTTPException(409, "模板名称已存在")
+    for key, value in payload.model_dump().items():
+        setattr(row, key, payload.defaults.model_dump(mode="json") if key == "defaults" else value)
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(409, "模板名称已存在") from exc
+    db.refresh(row)
+    return _pricing_template_public(row)
+
+
+@router.delete("/pricing-templates/{template_id}", status_code=204)
+def delete_pricing_template(template_id: int, db: Session = Depends(get_db), merchant: Merchant = Depends(require_merchant)):
+    row = db.scalar(select(PricingTemplate).where(PricingTemplate.id == template_id, PricingTemplate.merchant_id == merchant.id))
+    if row is None:
+        raise HTTPException(404, "定价模板不存在")
+    db.delete(row); db.commit()
 
 
 @router.post("/analysis/compare")

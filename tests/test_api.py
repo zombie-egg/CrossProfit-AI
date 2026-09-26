@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from decimal import Decimal
 import pytest
-from datetime import timedelta
+from datetime import date, timedelta
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, delete, select
 from sqlalchemy.exc import IntegrityError
@@ -96,6 +97,47 @@ def test_merchant_isolation_and_historical_metrics(clients):
     assert second.get("/historical-metrics").json() == []
     assert first.get("/platform-catalog").status_code == 404
     assert first.get("/connections").status_code == 404
+
+
+def test_pricing_templates_crud_isolation_and_staleness(clients):
+    first, second, sent, _ = clients
+    register(first, sent, "pricing-a@example.com")
+    register(second, sent, "pricing-b@example.com")
+    payload = {"name": "箱包 25%", "platform": "tiktok_shop", "category": "bags", "currency": "USD",
+        "target_mode": "fixed_margin", "target_value": "0.25",
+        "defaults": {"platform_config": {"platform": "tiktok_shop", "original_price": "0", "shipping_cost": "4.00",
+            "platform_commission_rate": "0.10", "payment_fee_rate": "0.02"},
+            "purchase_cost": "8.00", "packaging_cost": "1.00"},
+        "rate_source": "Seller Center fee page", "rate_effective_date": (date.today() - timedelta(days=91)).isoformat()}
+    created = first.post("/pricing-templates", json=payload)
+    assert created.status_code == 201
+    template_id = created.json()["id"]
+    assert created.json()["stale"] is True
+    assert first.post("/pricing-templates", json=payload).status_code == 409
+    assert first.get("/pricing-templates").json()[0]["id"] == template_id
+    assert second.get("/pricing-templates").json() == []
+    assert second.put(f"/pricing-templates/{template_id}", json=payload).status_code == 404
+    assert second.delete(f"/pricing-templates/{template_id}").status_code == 404
+    assert second.post("/pricing-templates", json=payload).status_code == 201
+    updated_payload = {**payload, "name": "箱包新版", "rate_effective_date": (date.today() - timedelta(days=89)).isoformat()}
+    updated = first.put(f"/pricing-templates/{template_id}", json=updated_payload)
+    assert updated.status_code == 200
+    assert updated.json()["stale"] is False
+    assert updated.json()["name"] == "箱包新版"
+    assert first.delete(f"/pricing-templates/{template_id}").status_code == 204
+    assert first.get("/pricing-templates").json() == []
+    assert len(second.get("/pricing-templates").json()) == 1
+
+
+def test_target_price_route_requires_merchant_and_returns_forward_result(clients, base_request):
+    first, _, sent, _ = clients
+    payload = {"request": base_request.model_dump(mode="json"), "target": {"mode": "fixed_amount", "value": "3.50"}}
+    assert first.post("/analysis/target-price", json=payload).status_code == 401
+    register(first, sent, "target@example.com")
+    response = first.post("/analysis/target-price", json=payload)
+    assert response.status_code == 200
+    assert response.json()["reachable"] is True
+    assert abs(Decimal(response.json()["result"]["unit_profit"]) - Decimal("3.50")) <= Decimal("0.01")
 
 
 def test_password_login_rate_limit(clients):

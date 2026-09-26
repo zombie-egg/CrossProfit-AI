@@ -109,6 +109,37 @@ export interface ProfitResult {
   breakdown: CalculationBreakdown[];
 }
 
+export interface PricingTarget {
+  mode: "fixed_amount" | "fixed_margin";
+  value: string;
+}
+
+export interface TargetPriceResult {
+  price: string | null;
+  result: ProfitResult | null;
+  reachable: boolean;
+  reason: string | null;
+}
+
+export interface PricingTemplateInput {
+  name: string;
+  platform: string;
+  category: string;
+  currency: string;
+  target_mode: PricingTarget["mode"];
+  target_value: string;
+  defaults: { platform_config: PlatformConfig; purchase_cost: string; packaging_cost: string };
+  rate_source: string;
+  rate_effective_date: string;
+}
+
+export interface PricingTemplate extends PricingTemplateInput {
+  id: number;
+  created_at: string;
+  updated_at: string;
+  stale: boolean;
+}
+
 export interface ScenarioResult {
   name: string;
   sales_multiplier: string;

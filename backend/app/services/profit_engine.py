@@ -7,10 +7,12 @@ from ..config import settings
 from ..schemas.domain import (
     CalculationBreakdown,
     PlatformConfigInput,
+    PricingTarget,
     ProductInput,
     ProfitAnalysisRequest,
     ProfitResult,
     PromotionActivityInput,
+    TargetPriceResult,
 )
 
 CENT = Decimal("0.01")
@@ -103,7 +105,7 @@ class ProfitEngine:
             return price, original - price
         return original, ZERO
 
-    def break_even_price(self, request: ProfitAnalysisRequest) -> Decimal | None:
+    def _price_equation(self, request: ProfitAnalysisRequest) -> tuple[Decimal, Decimal]:
         p, c, a = request.product, request.platform_config, request.activity
         platform_rate = a.platform_commission_rate if a.platform_commission_rate is not None else c.platform_commission_rate
         creator_rate = a.creator_commission_rate if a.creator_commission_rate is not None else c.creator_commission_rate
@@ -118,10 +120,29 @@ class ProfitEngine:
             variable_rate += c.tariff_rate
         fixed_unit += return_rate * (c.return_shipping_nonrecoverable + p.packaging_cost + p.purchase_cost * c.return_product_loss_rate)
         variable_rate += return_rate * c.platform_nonrefundable_fee_rate
+        return fixed_unit, variable_rate
+
+    def break_even_price(self, request: ProfitAnalysisRequest) -> Decimal | None:
+        fixed_unit, variable_rate = self._price_equation(request)
         denominator = Decimal("1") - variable_rate
         if denominator <= ZERO:
             return None
         return money(fixed_unit / denominator)
+
+    def target_price(self, request: ProfitAnalysisRequest, target: PricingTarget) -> TargetPriceResult:
+        fixed_unit, variable_rate = self._price_equation(request)
+        denominator = Decimal("1") - variable_rate - (target.value if target.mode == "fixed_margin" else ZERO)
+        if denominator <= ZERO:
+            reason = ("变动费率合计已达或超过 100%" if variable_rate >= Decimal("1")
+                else "变动费率加目标利润率已达或超过 100%")
+            return TargetPriceResult(price=None, result=None, reachable=False, reason=reason)
+        numerator = fixed_unit + (target.value if target.mode == "fixed_amount" else ZERO)
+        price = money(numerator / denominator)
+        priced_request = request.model_copy(deep=True)
+        priced_request.platform_config.original_price = price
+        priced_request.activity.discount_type = "none"
+        priced_request.activity.discount_value = ZERO
+        return TargetPriceResult(price=price, result=self.calculate(priced_request), reachable=True)
 
     def _risk(self, margin: Decimal) -> tuple[str, str]:
         labels = {"HIGHLY_RECOMMENDED": "强烈推荐", "RECOMMENDED": "可以参加", "CAUTION": "谨慎参加", "NOT_RECOMMENDED": "不建议参加"}

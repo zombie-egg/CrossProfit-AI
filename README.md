@@ -8,7 +8,7 @@
 
 ## 核心功能
 
-- `/products` 管理商品、采购与包装成本、平台费用及店铺历史指标；`/analysis` 在报名前输入活动规则并计算；`/quick` 保留为辅助单品测算工具
+- `/products` 管理商品、采购与包装成本、平台费用及店铺历史指标；`/analysis` 在报名前输入活动规则并计算；`/quick` 提供正向利润测算、目标利润反算售价与可复用定价模板
 - 独立商家账号；邮箱验证码注册、一次性验证码登录、密码登录和密码找回；两种登录方式都要求一次性图片验证码；商品、活动、分析和密钥按商家隔离
 - 可选的 TikTok Shop 与 Amazon 结算单导入与对账，用于验证精度和积累本店铺校准样本
 - 中文和英文界面、商家独立的 DeepSeek API Key、按平台保存历史访客/订单/退货数据
@@ -110,6 +110,7 @@ uvicorn backend.app.main:app --reload --port 8000
 - `GET/POST /activities`、`GET /activities/{id}`
 - `POST /activities/parse`
 - `POST /analysis/profit`
+- `POST /analysis/target-price`、`GET/POST /pricing-templates`、`PUT/DELETE /pricing-templates/{id}`
 - `POST /analysis/compare`
 - `POST /analysis/portfolio`
 - `GET /forecasts`、`POST /settlements/import`、`POST /settlements/confirm`

@@ -1,4 +1,4 @@
-import type { AnalysisRun, BootstrapData, ForecastDiff, HistoricalRow, HistoryItem, MerchantAccount, ParsedPromotion, PlatformConfig, Product, ProductInput, ProfitAnalysisRequest } from "@/types";
+import type { AnalysisRun, BootstrapData, ForecastDiff, HistoricalRow, HistoryItem, MerchantAccount, ParsedPromotion, PlatformConfig, PricingTarget, PricingTemplate, PricingTemplateInput, Product, ProductInput, ProfitAnalysisRequest, TargetPriceResult } from "@/types";
 
 export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "/api";
 
@@ -62,6 +62,11 @@ export const api = {
   createActivity: (productId: number, payload: ProfitAnalysisRequest["activity"]) =>
     request<{ id: number; product_id: number }>(`/activities?product_id=${productId}`, { method: "POST", body: JSON.stringify(payload) }),
   profit: (payload: ProfitAnalysisRequest) => request<AnalysisRun["result"]>("/analysis/profit", { method: "POST", body: JSON.stringify(payload) }),
+  targetPrice: (payload: { request: ProfitAnalysisRequest; target: PricingTarget }) => request<TargetPriceResult>("/analysis/target-price", { method: "POST", body: JSON.stringify(payload) }),
+  pricingTemplates: () => request<PricingTemplate[]>("/pricing-templates"),
+  createPricingTemplate: (payload: PricingTemplateInput) => request<PricingTemplate>("/pricing-templates", { method: "POST", body: JSON.stringify(payload) }),
+  updatePricingTemplate: (id: number, payload: PricingTemplateInput) => request<PricingTemplate>(`/pricing-templates/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
+  deletePricingTemplate: (id: number) => request<void>(`/pricing-templates/${id}`, { method: "DELETE" }),
   compare: (payloads: ProfitAnalysisRequest[]) => request<AnalysisRun["result"][]>("/analysis/compare", { method: "POST", body: JSON.stringify(payloads) }),
   runAnalysis: (payload: ProfitAnalysisRequest, productId?: number, activityId?: number) => {
     const params = new URLSearchParams();

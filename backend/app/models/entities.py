@@ -176,6 +176,24 @@ class Merchant(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
+class PricingTemplate(Base):
+    __tablename__ = "pricing_templates"
+    __table_args__ = (UniqueConstraint("merchant_id", "name", name="uq_pricing_template_merchant_name"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    merchant_id: Mapped[int] = mapped_column(ForeignKey("merchants.id"), index=True)
+    name: Mapped[str] = mapped_column(String(120))
+    platform: Mapped[str] = mapped_column(String(40))
+    category: Mapped[str] = mapped_column(String(120))
+    currency: Mapped[str] = mapped_column(String(8))
+    target_mode: Mapped[str] = mapped_column(String(20))
+    target_value: Mapped[Decimal] = mapped_column(Numeric(12, 6))
+    defaults: Mapped[dict] = mapped_column(JSON)
+    rate_source: Mapped[str] = mapped_column(Text)
+    rate_effective_date: Mapped[date] = mapped_column(Date)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class VerificationCode(Base):
     __tablename__ = "verification_codes"
     id: Mapped[int] = mapped_column(primary_key=True)

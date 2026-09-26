@@ -121,6 +121,59 @@ class ProfitAnalysisRequest(MoneyModel):
     rate_effective_date: date | None = None
 
 
+class PricingTarget(MoneyModel):
+    mode: Literal["fixed_amount", "fixed_margin"]
+    value: Decimal = Field(ge=0)
+
+    @model_validator(mode="after")
+    def validate_margin(self):
+        if self.mode == "fixed_margin" and self.value >= Decimal("1"):
+            raise ValueError("目标利润率必须小于 1")
+        return self
+
+
+class TargetPriceRequest(MoneyModel):
+    request: ProfitAnalysisRequest
+    target: PricingTarget
+
+
+class PricingTemplateDefaults(MoneyModel):
+    platform_config: PlatformConfigInput
+    purchase_cost: Decimal = Field(ge=0)
+    packaging_cost: Decimal = Field(ge=0)
+
+
+class PricingTemplateInput(MoneyModel):
+    name: str = Field(min_length=1, max_length=120)
+    platform: str = Field(min_length=1, max_length=40)
+    category: str = Field(min_length=1, max_length=120)
+    currency: str = Field(min_length=1, max_length=8)
+    target_mode: Literal["fixed_amount", "fixed_margin"]
+    target_value: Decimal = Field(ge=0)
+    defaults: PricingTemplateDefaults
+    rate_source: str = Field(min_length=1)
+    rate_effective_date: date
+
+    @field_validator("name", "platform", "category", "currency", "rate_source")
+    @classmethod
+    def nonblank(cls, value: str, info) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("模板名称、平台、类目、币种和费率来源不能为空")
+        if info.field_name == "platform":
+            return cleaned.lower().replace(" ", "_")
+        if info.field_name == "currency":
+            return cleaned.upper()
+        return cleaned
+
+    @model_validator(mode="after")
+    def validate_template(self):
+        PricingTarget(mode=self.target_mode, value=self.target_value)
+        if self.defaults.platform_config.platform != self.platform:
+            raise ValueError("模板平台与费率配置平台不一致")
+        return self
+
+
 class PortfolioItemInput(MoneyModel):
     product_id: int
     platform_config: PlatformConfigInput
@@ -164,6 +217,13 @@ class ProfitResult(MoneyModel):
     risk_label: str
     assumptions: list[str]
     breakdown: list[CalculationBreakdown]
+
+
+class TargetPriceResult(MoneyModel):
+    price: Decimal | None
+    result: ProfitResult | None
+    reachable: bool
+    reason: str | None = None
 
 
 class ScenarioResult(MoneyModel):
