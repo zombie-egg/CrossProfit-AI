@@ -1,4 +1,4 @@
-import type { AnalysisRun, BootstrapData, ForecastDiff, HistoricalRow, HistoryItem, MerchantAccount, ParsedPromotion, PlatformConfig, PlatformConnection, Product, ProductInput, ProfitAnalysisRequest } from "@/types";
+import type { AnalysisRun, BootstrapData, ForecastDiff, HistoricalRow, HistoryItem, MerchantAccount, ParsedPromotion, PlatformConfig, Product, ProductInput, ProfitAnalysisRequest } from "@/types";
 
 export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "/api";
 
@@ -39,11 +39,6 @@ export const api = {
   resetPassword: (email: string, code: string, password: string) => request<MerchantAccount>("/auth/reset-password", { method: "POST", body: JSON.stringify({ email, code, password }) }),
   logout: () => request<{ ok: boolean }>("/auth/logout", { method: "POST" }),
   setLocale: (locale: "zh" | "en") => request<{ locale: string }>("/auth/locale", { method: "PUT", body: JSON.stringify({ locale }) }),
-  platformCatalog: () => request<Array<{ id: string; name: string; region: string }>>("/platform-catalog"),
-  connections: () => request<PlatformConnection[]>("/connections"),
-  createConnection: (payload: { platform: string; label: string; shop_id?: string; app_key?: string; app_secret?: string; access_token?: string }) => request<PlatformConnection>("/connections", { method: "POST", body: JSON.stringify(payload) }),
-  updateConnection: (id: number, payload: { platform: string; label: string; shop_id?: string; app_key?: string; app_secret?: string; access_token?: string }) => request<PlatformConnection>(`/connections/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
-  deleteConnection: (id: number) => request<void>(`/connections/${id}`, { method: "DELETE" }),
   aiKeyStatus: () => request<{ configured: boolean }>("/ai/key"),
   saveAiKey: (api_key: string | null) => request<{ configured: boolean }>("/ai/key", { method: "PUT", body: JSON.stringify({ api_key }) }),
   historicalMetrics: () => request<HistoricalRow[]>("/historical-metrics"),
@@ -59,9 +54,8 @@ export const api = {
   savePlatformConfig: (id: number, payload: PlatformConfig) => request<PlatformConfig>(`/products/${id}/platform-configs`, { method: "POST", body: JSON.stringify(payload) }),
   activities: () => request<Array<{ id: number; product_id: number; platform: string; activity_name: string; estimated_sales: number }>>("/activities"),
   activity: (id: number) => request<Record<string, unknown>>(`/activities/${id}`),
-  parsePromotion: (url: string, rawText: string, platformHint = "") => {
+  parsePromotion: (rawText: string, platformHint = "") => {
     const params = new URLSearchParams({ raw_text: rawText });
-    if (url) params.set("url", url);
     if (platformHint) params.set("platform_hint", platformHint);
     return request<ParsedPromotion>(`/activities/parse?${params.toString()}`, { method: "POST" });
   },

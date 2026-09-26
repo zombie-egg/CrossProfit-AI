@@ -176,7 +176,7 @@ class ScenarioResult(MoneyModel):
     total_profit: Decimal
     profitable: bool
     sample_size: int | None = None
-    source: Literal["calibrated", "default"] = "default"
+    source: Literal["calibrated", "default", "sensitivity"] = "default"
     confidence_note: str | None = None
 
 
@@ -184,4 +184,3 @@ class ParsedPromotion(MoneyModel):
     activity: PromotionActivityInput
     recognized_fields: dict[str, Any]
     missing_suggestions: list[dict[str, str]]
-    fetch_warning: str | None = None

@@ -1,26 +1,28 @@
 # CrossProfit AI
 
-接在 ERP 之后的活动决策与对账层。卖家在报名前冻结成本与费率假设，活动结束后从 Seller Center 导出 CSV，逐费项核对结算结果，并用实测订单持续校准同店铺参数。妙手 ERP 是上游数据源，不是本产品的竞品。
+接在 ERP 之后的活动决策层。妙手 ERP 是上游数据源；本系统帮助商家在报名前判断一场活动扣除全部成本后是否值得参加。
+
+主路径只需三步：录入商品和实际成本 → 粘贴活动规则并确认折扣、费率与预计销量 → 查看单件利润、盈亏平衡点和风险结论。无需上传文件或取得平台 API 授权。结算单对账是可选的精度验证：愿意导入账单的商家，可用本店铺实测数据校准场景；没有账单也能完成主路径。
 
 > 平台内置费率全部标记为 **DEMO DEFAULT**，仅用于离线演示，不代表 TikTok Shop、Amazon 或其他平台的当前官方费率。请按国家、站点、类目与卖家协议覆盖。
 
 ## 核心功能
 
-- `/quick` 单品手动测算：无需 TikTok / ERP 接口权限；输入实际费用与来源后使用确定性引擎计算，预览不自动归档
+- `/products` 管理商品、采购与包装成本、平台费用及店铺历史指标；`/analysis` 在报名前输入活动规则并计算；`/quick` 保留为辅助单品测算工具
 - 独立商家账号；邮箱验证码注册、一次性验证码登录、密码登录和密码找回；两种登录方式都要求一次性图片验证码；商品、活动、分析和密钥按商家隔离
-- TikTok Shop 与 Amazon 两个平台的结算单导入与对账；不依赖平台 API 授权
+- 可选的 TikTok Shop 与 Amazon 结算单导入与对账，用于验证精度和积累本店铺校准样本
 - 中文和英文界面、商家独立的 DeepSeek API Key、按平台保存历史访客/订单/退货数据
 - TikTok Shop 与 Amazon 演示费率配置；其他平台由商家输入真实成本与费率
-- URL 安全读取、HTML 正文提取、规则结构化解析、抓取失败智能补录
+- 粘贴活动规则文本后进行确定性字段提取，缺失费用由商家确认
 - 商品本体与多平台成本配置分离
 - Decimal 确定性盈利引擎：折扣、佣金、采购、包装、物流、关税、支付、汇损、退货、其他费用及补贴
 - 单件盈亏平衡价、固定成本存在时的盈亏平衡销量
-- 5 档风险结论、成本瀑布图、乐观/基准/悲观敏感性分析
+- 5 档风险结论、成本瀑布图；有足够对账样本时给出实测分位数场景，否则仅展示成本敏感性
 - 规则驱动策略建议和多活动横向排名；归档时冻结输入、费率来源、生效日期与引擎版本
 - CSV 列映射预览、订单 SKU 关联、公式正确性与预测有效性分开报告，四 Sheet XLSX 对账报告
 - CSV 与四 Sheet XLSX 报告
 - 中英文 Next.js 界面、保留的 Streamlit 单机界面、FastAPI 与 SQLite
-- DeepSeek 可选补充定性分析，OpenAI 可选辅助规则提取；没有 API Key 或调用失败时保留规则建议，利润计算始终由确定性引擎完成
+- DeepSeek 或 OpenAI 可选补充定性建议；没有 API Key 或调用失败时保留规则建议，利润计算始终由确定性引擎完成
 
 企业反馈的逐项答复、妙手 ERP 接口与真实账单验证方案见 [docs/enterprise-feedback-plan.md](docs/enterprise-feedback-plan.md)。已找到公开业务接口文档，但尚未取得卖家授权、真实账单或访谈，不能将 Demo 结果视为真实业务验证。
 
@@ -72,13 +74,13 @@ export CROSSPROFIT_WEB_PORT=3000
 export NEXT_PUBLIC_API_URL="http://127.0.0.1:8000"
 ```
 
-生产环境必须配置持久的 `CROSSPROFIT_SECRET_KEY` 和 HTTPS Cookie。可在登录后的“设置”中保存商家自己的 DeepSeek Key；凭据在数据库中加密保存，接口只返回配置状态。DeepSeek 定性建议保留确定性 fallback；利润数始终由确定性引擎计算。建议定期备份数据库和密钥；丢失密钥会使已保存的连接凭据无法解密。
+生产环境必须配置持久的 `CROSSPROFIT_SECRET_KEY` 和 HTTPS Cookie。可在登录后的“设置”中保存商家自己的 DeepSeek Key；密钥在数据库中加密保存，接口只返回配置状态。DeepSeek 仅补充定性建议并保留确定性 fallback；利润数始终由确定性引擎计算。建议定期备份数据库和密钥；旧版商家连接凭据仍保存在数据库中。
 
-冷启动路径：卖家从 Seller Center 导出 TikTok Shop 或 Amazon 结算 CSV，在“结算对账”中选择归档快照、上传文件、映射列并确认，目标是 5 分钟内完成首次导入。平台 API 是后期优化，不是使用前提。“平台连接”只保存并隔离商家凭据，不表示平台授权或同步已完成。旧平台连接标记为 `deprecated`，历史凭据仍保留。活动费率以商家店铺协议为准。
+冷启动路径是录入商品与成本、粘贴活动规则、确认活动费率并查看利润结论。活动费率以商家店铺协议为准。平台 API 是后期优化，不是使用前提。旧平台连接数据保留在数据库中，不再提供凭据录入入口。
 
-首次对账：先在“活动分析”填写费率来源和生效日期并归档；在“结算对账”选该快照，上传不超过 5 MB、10,000 行的 CSV。界面会识别 UTF-8 BOM 或 GBK，要求把订单 ID、SKU、结算时间、币种、收入及费用列映射到系统口径。费用为负数的导出可逐列选择反转符号。预览列出未识别列与未映射费项；确认后才保存文件解析结果并运行对账。报告分开显示公式正确性和销量、退货率预测偏差。未知列或缺少可核对费项时公式结论为 `PARTIAL`；未取得真实样单前，不宣称已通过实账验证。
+可选精度验证：先在“活动分析”填写费率来源和生效日期并归档；在“精度验证”选该快照，上传不超过 5 MB、10,000 行的 CSV。界面会识别 UTF-8 BOM 或 GBK，要求把订单 ID、SKU、结算时间、币种、收入及费用列映射到系统口径。费用为负数的导出可逐列选择反转符号。预览列出未识别列与未映射费项；确认后才保存文件解析结果并运行对账。报告分开显示公式正确性和销量、退货率预测偏差。未知列或缺少可核对费项时公式结论为 `PARTIAL`；未取得真实样单前，不宣称已通过实账验证。
 
-“组合分析”可选同平台、同币种的多个 SKU，按各商品的预计销量计算边际贡献，报名费、广告预算、素材费和达人固定费在组合上只扣一次。场景校准按商家、平台、类目及最近 90 天的对账报告计算；至少 20 单且来自 3 份报告才启用分位数，否则明确提示样本不足。
+“组合分析”可选同平台、同币种的多个 SKU，按各商品的预计销量计算边际贡献，报名费、广告预算、素材费和达人固定费在组合上只扣一次。场景校准按商家、平台、类目及最近 90 天的对账报告计算；至少 20 单且来自 3 份报告才启用实测分位数。样本不足时不提供销量预测区间，只展示由当前输入推导的物流和退货率成本敏感性。
 
 ## Demo Mode
 
@@ -102,7 +104,7 @@ uvicorn backend.app.main:app --reload --port 8000
 
 - `GET /health`
 - `GET /auth/captcha`、`POST /auth/code`、`POST /auth/register`、`POST /auth/login`、`POST /auth/login/code`、`POST /auth/reset-password`、`GET /auth/me`、`POST /auth/logout`
-- `GET/POST/PUT/DELETE /connections`、`GET /platform-catalog`、`GET/POST /historical-metrics`、`GET/PUT /ai/key`
+- `GET/POST /historical-metrics`、`GET/PUT /ai/key`
 - `GET/POST /products`、`GET/PUT/DELETE /products/{id}`
 - `POST /products/{id}/platform-configs`
 - `GET/POST /activities`、`GET /activities/{id}`
@@ -128,7 +130,7 @@ npm run lint
 npm run build
 ```
 
-测试覆盖盈利/亏损、折扣、零佣金、高退货、达人佣金、平台/物流补贴、关税策略、盈亏平衡价和量、缺失字段默认、金额精度、场景、平台差异、HTML fixture 解析、抓取 fallback 与 API。
+测试覆盖盈利/亏损、折扣、零佣金、高退货、达人佣金、平台/物流补贴、关税策略、盈亏平衡价和量、缺失字段默认、金额精度、场景、平台差异、文本规则解析与 API。
 
 ## 计算口径
 
@@ -163,14 +165,14 @@ crossprofit-ai/
 │   └── services/
 │       ├── profit_engine.py 确定性财务核心
 │       ├── scenario_engine.py / strategy_engine.py
-│       ├── promotion_parser.py / scraper/
+│       ├── promotion_parser.py  文本活动规则解析
 │       ├── platforms/       平台 Adapter
 │       ├── llm/             OpenAI/Mock provider
 │       └── export_service.py
 ├── frontend/streamlit_app.py
 ├── web/                     Next.js 14 / TypeScript / Tailwind / shadcn 主界面
 │   └── src/app/             Dashboard、分析、对比、商品、历史、导出、设置
-├── tests/                   单元与集成测试、HTML fixtures
+├── tests/                   单元与集成测试
 ├── docs/                    架构与比赛演示脚本
 ├── data/                    运行时 SQLite
 ├── run.py                   统一启动 FastAPI + Next.js
@@ -182,27 +184,24 @@ crossprofit-ai/
 
 ## 隐私与安全
 
-- URL 只允许 HTTP/HTTPS，拒绝 localhost、环回、私网、链路本地、保留和组播地址；设置超时、User-Agent、响应类型与错误降级。
-- 当前抓取器不跟随重定向，避免通过重定向绕过 SSRF 校验；遇到登录、反爬或动态页面时转为规则文本补录。
 - 核心财务计算与 SQLite 数据均在本地。
 - 若启用 OpenAI，只应发送活动理解和建议所需的最小字段，不上传完整店铺数据；利润数字不交给模型生成或修改。
 
 ## 已知限制
 
 - 平台规则与费率不是实时同步；需卖家确认。
-- 通用 HTTP 抓取不执行 JavaScript，不绕过登录、验证码或反爬。
+- 未积累足够对账样本时不提供销量预测区间，只提供基于商家输入的成本敏感性。
 - 规则解析覆盖中英文常见折扣、佣金、销量和日期表达，不等同于生产级文档理解。
 - 当前单币种活动内计算，不进行实时汇率换算；汇损用配置比例估算。
 - CSV 列名随站点和导出版本变化，需要在导入时确认映射；多件订单和调整行应先核对 `gross_revenue` 口径。
 
 ## 截图占位
 
-比赛提交前建议补充：Dashboard、盈利结论与瀑布图、三情景分析、多活动对比、Excel 报告截图。
+比赛提交前建议补充：Dashboard、盈利结论与瀑布图、成本敏感性、多活动对比、Excel 报告截图。
 
 ## 未来规划
 
 - 接入经用户授权的平台官方活动与订单 API，并维护分站点/类目版本化费率
-- Playwright 作为可选异步抓取队列，不成为主流程依赖
 - OCR/PDF 活动规则解析、币种换算、税务规则包
 - 团队协作、审计日志
 - 云部署、鉴权与加密密钥管理

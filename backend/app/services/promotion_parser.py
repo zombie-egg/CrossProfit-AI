@@ -6,8 +6,6 @@ from decimal import Decimal
 from typing import Any
 
 from ..schemas.domain import ParsedPromotion, PromotionActivityInput
-from .llm import get_llm_provider
-from .scraper import GenericScraper, ScraperError
 
 
 MISSING_HELP = {
@@ -22,32 +20,15 @@ MISSING_HELP = {
 
 
 class PromotionParserService:
-    def __init__(self, scraper: GenericScraper | None = None):
-        self.scraper = scraper or GenericScraper()
-        self.llm = get_llm_provider()
-
-    def parse(self, url: str | None = None, raw_text: str = "", platform_hint: str | None = None) -> ParsedPromotion:
-        warning = None
+    def parse(self, raw_text: str = "", platform_hint: str | None = None) -> ParsedPromotion:
         text = raw_text.strip()
-        if url:
-            try:
-                page = self.fetch_url(url)
-                text = f"{self.extract_page_content(page)}\n{text}".strip()
-            except ScraperError as exc:
-                warning = f"{exc}。你仍然可以粘贴活动规则文本，系统会继续帮你识别。"
         fields = self.normalize_fields(self.extract_rule_candidates(text))
         if platform_hint:
             fields["platform"] = platform_hint
         if fields.get("platform") in (None, "", "unknown"):
-            fields["platform"] = self.detect_platform(f"{url or ''} {text}")
-        try:
-            llm_fields = self.llm.extract(text) if text else {}
-            for key, value in llm_fields.items():
-                fields.setdefault(key, value)
-        except Exception:
-            warning = (warning + " " if warning else "") + "AI 辅助暂不可用，已自动切换到规则分析模式。"
+            fields["platform"] = self.detect_platform(text)
         recognized = {k: v for k, v in fields.items() if v not in (None, "")}
-        defaults: dict[str, Any] = {"platform": fields.get("platform", "unknown"), "activity_name": fields.get("activity_name", "未命名活动"), "raw_text": text, "source_url": url}
+        defaults: dict[str, Any] = {"platform": fields.get("platform", "unknown"), "activity_name": fields.get("activity_name", "未命名活动"), "raw_text": text}
         defaults.update(fields)
         activity = PromotionActivityInput.model_validate(defaults)
         self.validate_fields(activity)
@@ -55,14 +36,7 @@ class PromotionParserService:
         activity.missing_fields = missing
         activity.parse_confidence = self.calculate_confidence(recognized)
         suggestions = self.generate_missing_field_suggestions(recognized)
-        return ParsedPromotion(activity=activity, recognized_fields=recognized, missing_suggestions=suggestions, fetch_warning=warning)
-
-    def fetch_url(self, url: str):
-        return self.scraper.fetch(url)
-
-    @staticmethod
-    def extract_page_content(page) -> str:
-        return page.text
+        return ParsedPromotion(activity=activity, recognized_fields=recognized, missing_suggestions=suggestions)
 
     @staticmethod
     def normalize_fields(fields: dict[str, Any]) -> dict[str, Any]:

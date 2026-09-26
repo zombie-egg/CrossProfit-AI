@@ -272,8 +272,8 @@ def create_activity(product_id: int, payload: PromotionActivityInput, db: Sessio
 
 
 @router.post("/activities/parse", response_model=ParsedPromotion)
-def parse_activity(url: str | None = None, raw_text: str = "", platform_hint: str | None = None):
-    return PromotionParserService().parse(url=url, raw_text=raw_text, platform_hint=platform_hint)
+def parse_activity(raw_text: str = "", platform_hint: str | None = None):
+    return PromotionParserService().parse(raw_text=raw_text, platform_hint=platform_hint)
 
 
 @router.post("/analysis/profit", response_model=ProfitResult)

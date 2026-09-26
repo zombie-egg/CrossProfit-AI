@@ -1,7 +1,6 @@
 export type Platform = "tiktok_shop" | "amazon" | "temu" | "shein" | string;
 
 export interface MerchantAccount { id: number; email: string; locale: "zh" | "en"; }
-export interface PlatformConnection { id: number; platform: string; label: string; shop_id: string | null; has_app_key: boolean; has_app_secret: boolean; has_access_token: boolean; status: string; created_at: string; }
 export interface HistoricalRow { id: number; platform: string; period: string; visitors: number | null; orders: number | null; returns: number | null; source: string; }
 
 export interface ProductInput {
@@ -120,7 +119,7 @@ export interface ScenarioResult {
   total_profit: string;
   profitable: boolean;
   sample_size?: number | null;
-  source?: "calibrated" | "default";
+  source?: "calibrated" | "default" | "sensitivity";
   confidence_note?: string | null;
 }
 
@@ -128,7 +127,6 @@ export interface ParsedPromotion {
   activity: PromotionActivity;
   recognized_fields: Record<string, string | number | null>;
   missing_suggestions: Array<{ field: string; label: string; reason: string; default_action: string }>;
-  fetch_warning: string | null;
 }
 
 export interface AnalysisRun {

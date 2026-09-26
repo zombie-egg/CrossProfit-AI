@@ -11,7 +11,7 @@ from sqlalchemy.pool import StaticPool
 from backend.app.api import auth
 from backend.app.database import get_db, install_snapshot_guards, register_snapshot_cleanup
 from backend.app.main import app
-from backend.app.models import Base, CalibratedParameter, CaptchaChallenge, ForecastSnapshot, PlatformConnection, ReconciliationReport, SettlementImport, VerificationCode
+from backend.app.models import Base, CalibratedParameter, CaptchaChallenge, ForecastSnapshot, ReconciliationReport, SettlementImport, VerificationCode
 
 
 @pytest.fixture
@@ -74,7 +74,7 @@ def test_auth_and_password_recovery(clients):
     assert password_login(first, "a@example.com", "new-password-456").status_code == 200
 
 
-def test_merchant_isolation_and_multiple_platform_connections(clients):
+def test_merchant_isolation_and_historical_metrics(clients):
     first, second, sent, engine = clients
     register(first, sent, "a@example.com")
     register(second, sent, "b@example.com")
@@ -90,18 +90,12 @@ def test_merchant_isolation_and_multiple_platform_connections(clients):
     assert [x["id"] for x in first.get("/ui/bootstrap").json()["products"]] == [a_id]
     assert [x["id"] for x in second.get("/ui/bootstrap").json()["products"]] == [b_id]
 
-    credentials = {"platform": "tiktok_shop", "label": "旗舰店", "shop_id": "shop-1", "app_key": "private-key", "app_secret": "private-secret"}
-    connection = first.post("/connections", json=credentials)
-    assert connection.status_code == 201
-    assert "private-key" not in connection.text
-    assert second.get("/connections").json() == []
-    assert first.post("/connections", json={**credentials, "platform": "amazon"}).status_code == 201
-    assert first.post("/connections", json={**credentials, "platform": "douyin"}).status_code == 422
-    assert len(first.get("/connections").json()) == 2
-    with Session(engine) as db:
-        stored = db.scalar(select(PlatformConnection).where(PlatformConnection.id == connection.json()["id"]))
-        assert stored and stored.app_key_encrypted != "private-key"
-    assert second.delete(f"/connections/{connection.json()['id']}").status_code == 404
+    metric = {"platform": "tiktok_shop", "period": "2026-09", "visitors": 100, "orders": 20, "returns": 2, "source": "Seller Center"}
+    assert first.post("/historical-metrics", json=metric).status_code == 201
+    assert len(first.get("/historical-metrics").json()) == 1
+    assert second.get("/historical-metrics").json() == []
+    assert first.get("/platform-catalog").status_code == 404
+    assert first.get("/connections").status_code == 404
 
 
 def test_password_login_rate_limit(clients):

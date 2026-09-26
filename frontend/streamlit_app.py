@@ -156,7 +156,7 @@ elif page == "活动分析":
     st.subheader("1 · 选择商品与活动获取方式")
     pmap = {f"{p.name} · {p.sku}": p for p in products}
     product = pmap[st.selectbox("商品", list(pmap))]
-    mode = st.radio("活动来源", ["加载演示案例", "粘贴活动规则文本", "读取活动 URL"], horizontal=True)
+    mode = st.radio("活动来源", ["加载演示案例", "粘贴活动规则文本"], horizontal=True)
     selected_activity = None
     parsed = None
     if mode == "加载演示案例":
@@ -165,15 +165,13 @@ elif page == "活动分析":
         if amap:
             selected_activity = amap[st.selectbox("演示活动", list(amap))]
     else:
-        url = st.text_input("活动页面 URL", placeholder="https://...（读取失败会自动进入智能补录）") if mode == "读取活动 URL" else None
-        text = st.text_area("活动规则文本（推荐同时粘贴，可提高识别率）", height=150, placeholder="例如：TikTok Summer Sale，折扣 25%，达人佣金 12%，预计销量 500...")
+        text = st.text_area("活动规则文本", height=150, placeholder="例如：TikTok Summer Sale，折扣 25%，达人佣金 12%，预计销量 500...")
         if st.button("自动识别活动规则", type="primary"):
-            parsed = PromotionParserService().parse(url=url, raw_text=text)
+            parsed = PromotionParserService().parse(raw_text=text)
             st.session_state["parsed"] = parsed.model_dump(mode="json")
         if "parsed" in st.session_state:
             from backend.app.schemas.domain import ParsedPromotion
             parsed = ParsedPromotion.model_validate(st.session_state["parsed"])
-            if parsed.fetch_warning: st.warning(parsed.fetch_warning)
             st.success(f"已识别 {len(parsed.recognized_fields)} 项 · 置信度 {parsed.activity.parse_confidence:.0%}")
             st.json(parsed.recognized_fields)
             if parsed.missing_suggestions:

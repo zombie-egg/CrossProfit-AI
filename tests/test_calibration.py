@@ -5,12 +5,12 @@ from backend.app.services.scenario_engine import ScenarioEngine
 from backend.app.services.calibration import percentile
 
 
-def test_small_sample_keeps_default_scenarios_and_warns(base_request):
+def test_small_sample_uses_cost_sensitivity_and_warns(base_request):
     small = SimpleNamespace(p25=Decimal("0.01"), p50=Decimal("0.02"), p75=Decimal("0.03"), sample_size=8, report_count=2)
     scenarios = ScenarioEngine().analyze(base_request, {"return_rate": small, "sales_multiplier": small})
-    assert all(row.source == "default" and row.sample_size == 8 for row in scenarios)
-    assert all(row.confidence_note == "样本 8 单，区间不可信" for row in scenarios)
-    assert scenarios[0].sales_multiplier == Decimal("1.20")
+    assert [row.source for row in scenarios] == ["default", "sensitivity", "sensitivity", "sensitivity", "sensitivity"]
+    assert all(row.sample_size == 8 and row.sales_multiplier == Decimal("1") for row in scenarios)
+    assert all("样本 8 单不足" in row.confidence_note for row in scenarios)
 
 
 def test_calibrated_quantiles_used_after_threshold(base_request):

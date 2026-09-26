@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { BarChart3, Calculator, Download, History, LayoutDashboard, Megaphone, Menu, Package, Settings, TrendingUp, PlugZap, LogOut, FileCheck2 } from "lucide-react";
+import { BarChart3, Calculator, Download, History, LayoutDashboard, Megaphone, Menu, Package, Settings, TrendingUp, LogOut, FileCheck2 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
@@ -17,9 +17,9 @@ import { Component as InfiniteGrid } from "@/components/ui/the-infinite-grid";
 import { cn, money, platformName } from "@/lib/utils";
 
 const primary = [
-  ["/", "Dashboard", LayoutDashboard], ["/quick", "单品测算", Calculator], ["/analysis", "活动分析", Megaphone], ["/portfolio", "组合分析", BarChart3], ["/comparison", "活动对比", BarChart3],
-  ["/products", "商品管理", Package], ["/reconciliation", "结算对账", FileCheck2], ["/connections", "平台连接", PlugZap], ["/history", "历史记录", History],
+  ["/", "Dashboard", LayoutDashboard], ["/products", "商品管理", Package], ["/analysis", "活动分析", Megaphone], ["/portfolio", "组合分析", BarChart3], ["/comparison", "活动对比", BarChart3], ["/history", "历史记录", History],
 ] as const;
+const advanced = [["/reconciliation", "精度验证", FileCheck2], ["/quick", "单品测算", Calculator]] as const;
 const secondary = [["/exports", "导出中心", Download], ["/settings", "设置", Settings]] as const;
 const pageCopy: Record<string, [string, string]> = {
   "/": ["Dashboard", "跨平台活动盈利概览"],
@@ -28,8 +28,7 @@ const pageCopy: Record<string, [string, string]> = {
   "/portfolio": ["组合分析", "一次测算多个 SKU 的活动贡献"],
   "/comparison": ["活动对比", "用统一口径判断哪个活动更值得参加"],
   "/products": ["商品管理", "集中管理商品成本和不同平台费用结构"],
-  "/reconciliation": ["结算对账", "上传结算单，核对公式与预测偏差"],
-  "/connections": ["平台连接", "一个账号管理多个平台与店铺"],
+  "/reconciliation": ["精度验证", "可选：上传结算单校准本店铺的预测区间"],
   "/history": ["历史记录", "回看每一次活动决策与计算结果"],
   "/exports": ["导出中心", "下载可交付的盈利分析报告"],
   "/settings": ["设置", "管理分析模式、利润阈值与显示偏好"],
@@ -42,13 +41,13 @@ function Brand({ expanded = true }: { expanded?: boolean }) {
 function NavList({ expanded, close }: { expanded: boolean; close?: () => void }) {
   const pathname = usePathname();
   const { locale } = useAuth();
-  const english: Record<string, string> = { "Dashboard": "Dashboard", "单品测算": "Single product", "活动分析": "Promotion analysis", "组合分析": "Portfolio", "活动对比": "Compare", "商品管理": "Products", "结算对账": "Reconciliation", "平台连接": "Connections", "历史记录": "History", "导出中心": "Exports", "设置": "Settings" };
-  const render = (item: (typeof primary)[number] | (typeof secondary)[number]) => {
+  const english: Record<string, string> = { "Dashboard": "Dashboard", "单品测算": "Single product", "活动分析": "Promotion analysis", "组合分析": "Portfolio", "活动对比": "Compare", "商品管理": "Products", "精度验证": "Accuracy validation", "历史记录": "History", "导出中心": "Exports", "设置": "Settings" };
+  const render = (item: (typeof primary)[number] | (typeof advanced)[number] | (typeof secondary)[number]) => {
     const [href, originalLabel, Icon] = item; const label = locale === "en" ? english[originalLabel] ?? originalLabel : originalLabel; const active = pathname === href;
     const link = <Link href={href} onClick={close} className={cn("flex h-10 items-center gap-3 rounded-lg px-3 text-sm font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-950", active && "bg-slate-100 text-slate-950")}><Icon className="size-[18px] shrink-0" />{expanded && <span>{label}</span>}</Link>;
     return expanded ? <div key={href}>{link}</div> : <Tooltip key={href}><TooltipTrigger asChild>{link}</TooltipTrigger><TooltipContent side="right">{label}</TooltipContent></Tooltip>;
   };
-  return <nav className="flex flex-1 flex-col px-3"><div className="space-y-1">{primary.map(render)}</div><div className="my-4 border-t" /><div className="space-y-1">{secondary.map(render)}</div></nav>;
+  return <nav className="flex flex-1 flex-col px-3"><div className="space-y-1">{primary.map(render)}</div><div className="my-4 border-t" /><div className="space-y-1">{expanded && <p className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">{locale === "en" ? "Validation and tools" : "精度验证与工具"}</p>}{advanced.map(render)}</div><div className="my-4 border-t" /><div className="space-y-1">{secondary.map(render)}</div></nav>;
 }
 
 function DesktopSidebar() {
@@ -75,6 +74,6 @@ function DemoDialog() {
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname(); const [title, subtitle] = pageCopy[pathname] ?? pageCopy["/"];
   const { account, locale, setLocale, logout } = useAuth();
-  const titleEn: Record<string, string> = { "/": "Dashboard", "/quick": "Single product", "/analysis": "Promotion analysis", "/portfolio": "Portfolio", "/comparison": "Compare activities", "/products": "Products", "/reconciliation": "Reconciliation", "/connections": "Connections", "/history": "History", "/exports": "Exports", "/settings": "Settings" };
-  return <div className="relative min-h-screen"><LocaleDom/><InfiniteGrid className="z-0"/><DesktopSidebar /><header className="sticky top-0 z-30 flex h-16 items-center bg-white/65 px-4 shadow-[0_12px_36px_-32px_rgba(15,23,42,0.5)] backdrop-blur-xl lg:ml-[72px] lg:px-8"><Sheet><SheetTrigger asChild><Button variant="ghost" size="icon" className="mr-2 lg:hidden"><Menu className="size-5" /></Button></SheetTrigger><SheetContent side="left" className="w-[280px] border-0 bg-white/90 p-0 backdrop-blur-xl"><SheetTitle className="sr-only">Navigation</SheetTitle><Brand /><NavList expanded /></SheetContent></Sheet><div className="min-w-0 flex-1"><h1 className="truncate text-sm font-semibold text-slate-950">{locale === "en" ? titleEn[pathname] ?? title : title}</h1><p className="hidden truncate text-xs text-slate-500 sm:block">{locale === "en" ? "Merchant workspace" : subtitle}</p></div><div className="flex items-center gap-2"><span className="hidden max-w-40 truncate text-xs text-slate-500 md:inline">{account?.email}</span><Button size="sm" variant="outline" onClick={() => void setLocale(locale === "zh" ? "en" : "zh")}>{locale === "zh" ? "EN" : "中文"}</Button><Button size="sm" variant="ghost" onClick={() => void logout()} title={locale === "zh" ? "退出登录" : "Sign out"}><LogOut className="size-4"/></Button></div></header><main className="relative z-10 lg:ml-[72px]"><motion.div key={pathname} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .2 }} className="mx-auto max-w-[1560px] p-4 sm:p-6 lg:p-8">{children}</motion.div></main></div>;
+  const titleEn: Record<string, string> = { "/": "Dashboard", "/quick": "Single product", "/analysis": "Promotion analysis", "/portfolio": "Portfolio", "/comparison": "Compare activities", "/products": "Products", "/reconciliation": "Accuracy validation", "/history": "History", "/exports": "Exports", "/settings": "Settings" };
+  return <div className="relative min-h-screen"><LocaleDom/><InfiniteGrid className="z-0"/><DesktopSidebar /><header className="sticky top-0 z-30 flex h-16 items-center bg-white/65 px-4 shadow-[0_12px_36px_-32px_rgba(15,23,42,0.5)] backdrop-blur-xl lg:ml-[72px] lg:px-8"><Sheet><SheetTrigger asChild><Button variant="ghost" size="icon" className="mr-2 lg:hidden"><Menu className="size-5" /></Button></SheetTrigger><SheetContent side="left" className="w-[280px] border-0 bg-white/90 p-0 backdrop-blur-xl"><SheetTitle className="sr-only">Navigation</SheetTitle><Brand /><NavList expanded /></SheetContent></Sheet><div className="min-w-0 flex-1"><h1 className="truncate text-sm font-semibold text-slate-950">{locale === "en" ? titleEn[pathname] ?? title : title}</h1><p className="hidden truncate text-xs text-slate-500 sm:block">{locale === "en" ? pathname === "/reconciliation" ? "Optional: upload settlement CSVs to calibrate your shop's forecast range" : "Merchant workspace" : subtitle}</p></div><div className="flex items-center gap-2"><span className="hidden max-w-40 truncate text-xs text-slate-500 md:inline">{account?.email}</span><Button size="sm" variant="outline" onClick={() => void setLocale(locale === "zh" ? "en" : "zh")}>{locale === "zh" ? "EN" : "中文"}</Button><Button size="sm" variant="ghost" onClick={() => void logout()} title={locale === "zh" ? "退出登录" : "Sign out"}><LogOut className="size-4"/></Button></div></header><main className="relative z-10 lg:ml-[72px]"><motion.div key={pathname} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .2 }} className="mx-auto max-w-[1560px] p-4 sm:p-6 lg:p-8">{children}</motion.div></main></div>;
 }
