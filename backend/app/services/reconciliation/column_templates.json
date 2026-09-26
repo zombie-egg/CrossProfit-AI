@@ -1,0 +1,4 @@
+{
+  "tiktok_shop": {"fields": {}, "fee_columns": {}, "note": "填写当前 Seller Center 导出文件的实际列名；平台导出格式可能因站点和版本不同而变化。"},
+  "amazon": {"fields": {}, "fee_columns": {}, "note": "填写当前 Seller Central 导出文件的实际列名；平台导出格式可能因站点和版本不同而变化。"}
+}

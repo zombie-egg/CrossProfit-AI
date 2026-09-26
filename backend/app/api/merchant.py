@@ -14,15 +14,8 @@ from .auth import encrypt_secret, require_merchant
 router = APIRouter(tags=["merchant"], dependencies=[Depends(require_merchant)])
 
 PLATFORMS = [
-    {"id": "taobao", "name": "淘宝 / Taobao", "region": "CN"},
-    {"id": "pinduoduo", "name": "拼多多 / Pinduoduo", "region": "CN"},
-    {"id": "douyin", "name": "抖音电商 / Douyin", "region": "CN"},
-    {"id": "xianyu", "name": "闲鱼 / Xianyu", "region": "CN"},
     {"id": "tiktok_shop", "name": "TikTok Shop", "region": "Global"},
     {"id": "amazon", "name": "Amazon", "region": "Global"},
-    {"id": "temu", "name": "Temu", "region": "Global"},
-    {"id": "shein", "name": "SHEIN", "region": "Global"},
-    {"id": "miaoshou", "name": "妙手 ERP / MiaoShou", "region": "Multi-platform"},
 ]
 
 
@@ -80,6 +73,8 @@ def list_connections(merchant: Merchant = Depends(require_merchant), db: Session
 
 @router.post("/connections", status_code=201)
 def create_connection(payload: ConnectionInput, merchant: Merchant = Depends(require_merchant), db: Session = Depends(get_db)):
+    if payload.platform not in {"tiktok_shop", "amazon"}:
+        raise HTTPException(422, "目前仅支持 TikTok Shop 与 Amazon")
     if db.scalar(select(PlatformConnection.id).where(PlatformConnection.merchant_id == merchant.id, PlatformConnection.platform == payload.platform, PlatformConnection.label == payload.label)):
         raise HTTPException(409, "该平台连接名称已存在")
     row = PlatformConnection(merchant_id=merchant.id, platform=payload.platform, label=payload.label, shop_id=payload.shop_id,
@@ -93,6 +88,8 @@ def create_connection(payload: ConnectionInput, merchant: Merchant = Depends(req
 
 @router.put("/connections/{connection_id}")
 def update_connection(connection_id: int, payload: ConnectionInput, merchant: Merchant = Depends(require_merchant), db: Session = Depends(get_db)):
+    if payload.platform not in {"tiktok_shop", "amazon"}:
+        raise HTTPException(422, "目前仅支持 TikTok Shop 与 Amazon")
     row = db.scalar(select(PlatformConnection).where(PlatformConnection.id == connection_id, PlatformConnection.merchant_id == merchant.id))
     if row is None:
         raise HTTPException(404, "平台连接不存在")

@@ -1,4 +1,4 @@
-import type { AnalysisRun, BootstrapData, HistoricalMetrics, HistoricalRow, HistoryItem, MerchantAccount, ParsedPromotion, PlatformConfig, PlatformConnection, Product, ProductInput, ProfitAnalysisRequest, ResearchReport } from "@/types";
+import type { AnalysisRun, BootstrapData, HistoricalRow, HistoryItem, MerchantAccount, ParsedPromotion, PlatformConfig, PlatformConnection, Product, ProductInput, ProfitAnalysisRequest } from "@/types";
 
 export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "/api";
 
@@ -13,7 +13,23 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+async function upload<T>(path: string, body: FormData): Promise<T> {
+  const response = await fetch(`${API_URL}${path}`, { method: "POST", credentials: "include", body });
+  if (response.status === 401) window.dispatchEvent(new Event("crossprofit:unauthorized"));
+  if (!response.ok) { const error = await response.json().catch(() => ({})); throw new Error(error.detail ?? `请求失败 (${response.status})`); }
+  return response.json() as Promise<T>;
+}
+
 export const api = {
+  forecasts: () => request<Array<{ id: number; sku: string; platform: string; activity_name: string; frozen_at: string; engine_version: string }>>("/forecasts"),
+  portfolio: (payload: { activity: ProfitAnalysisRequest["activity"]; items: Array<{ product_id: number; platform_config: PlatformConfig; estimated_sales: number }> }) => request<{ total_profit: string; total_revenue: string; weighted_margin: string; fixed_cost: string; risk_distribution: Record<string, number>; sku_results: Array<{ sku: string; marginal_contribution: string; margin: string; risk_level: string }>; exclude_candidates: Array<{ sku: string; marginal_contribution: string; reason: string }> }>("/analysis/portfolio", { method: "POST", body: JSON.stringify(payload) }),
+  settlementUpload: (action: "import" | "confirm", file: File, platform: string, columnMapping: object, feeMapping: object) => {
+    const body = new FormData(); body.set("file", file); body.set("platform", platform); body.set("column_mapping", JSON.stringify(columnMapping)); body.set("fee_mapping", JSON.stringify(feeMapping));
+    return upload<{ row_count: number; import_id?: number; preview?: Array<Record<string, unknown>>; unrecognized_columns: string[]; unmapped_fees?: Array<{ fee_name: string; amount: string }> }>(`/settlements/${action}`, body);
+  },
+  runReconciliation: (snapshotId: number, importId: number) => request<{ id: number; formula_verdict: string; max_fee_diff: string; forecast_diff: Record<string, string | number | null>; diff_data: { fee_diffs: Array<{ order_id: string; fee_item: string; predicted: string; actual: string; absolute_diff: string; relative_diff: string | null; reason: string; formula_pass: boolean }>; unmapped_fees: Array<Record<string, string>>; unmatched_orders: Array<Record<string, string>>; unverified_fees: Array<Record<string, string>>; unrecognized_columns: string[] } }>(`/reconciliation/run?snapshot_id=${snapshotId}&import_id=${importId}`, { method: "POST" }),
+  reconciliationHistory: () => request<Array<{ id: number; snapshot_id: number; formula_verdict: string; max_fee_diff: string }>>("/reconciliation"),
+  reconciliationExportUrl: (id: number) => `${API_URL}/reconciliation/${id}/export`,
   me: () => request<MerchantAccount>("/auth/me"),
   captcha: () => request<{ token: string; image: string }>("/auth/captcha"),
   sendCode: (email: string, purpose: "register" | "login" | "reset") => request<{ sent: boolean }>("/auth/code", { method: "POST", body: JSON.stringify({ email, purpose }) }),
@@ -52,7 +68,6 @@ export const api = {
   createActivity: (productId: number, payload: ProfitAnalysisRequest["activity"]) =>
     request<{ id: number; product_id: number }>(`/activities?product_id=${productId}`, { method: "POST", body: JSON.stringify(payload) }),
   profit: (payload: ProfitAnalysisRequest) => request<AnalysisRun["result"]>("/analysis/profit", { method: "POST", body: JSON.stringify(payload) }),
-  research: (analysis: ProfitAnalysisRequest, historical: HistoricalMetrics, evidence_urls: string[]) => request<ResearchReport>("/analysis/research", { method: "POST", body: JSON.stringify({ analysis, historical, evidence_urls }) }),
   compare: (payloads: ProfitAnalysisRequest[]) => request<AnalysisRun["result"][]>("/analysis/compare", { method: "POST", body: JSON.stringify(payloads) }),
   runAnalysis: (payload: ProfitAnalysisRequest, productId?: number, activityId?: number) => {
     const params = new URLSearchParams();

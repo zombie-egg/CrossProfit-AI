@@ -1,0 +1,3 @@
+Order,SKU,Settled,Currency,Gross,Commission,Other,Refund,Subsidy
+o-1,PB-001,2026-09-01,USD,100.00,10.00,0.40,0,0
+o-2,OTHER,2026-09-02,USD,50.00,5.00,0,0,0

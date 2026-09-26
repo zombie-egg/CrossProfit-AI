@@ -7,6 +7,7 @@ export interface HistoricalRow { id: number; platform: string; period: string; v
 export interface ProductInput {
   name: string;
   sku: string;
+  category?: string;
   purchase_cost: string;
   packaging_cost: string;
   weight_kg: string;
@@ -77,6 +78,8 @@ export interface ProfitAnalysisRequest {
   product: ProductInput;
   platform_config: PlatformConfig;
   activity: PromotionActivity;
+  rate_source?: string | null;
+  rate_effective_date?: string | null;
 }
 
 export interface CalculationBreakdown {
@@ -116,6 +119,9 @@ export interface ScenarioResult {
   profit_margin: string;
   total_profit: string;
   profitable: boolean;
+  sample_size?: number | null;
+  source?: "calibrated" | "default";
+  confidence_note?: string | null;
 }
 
 export interface ParsedPromotion {
@@ -127,6 +133,9 @@ export interface ParsedPromotion {
 
 export interface AnalysisRun {
   analysis_id: number | null;
+  snapshot_id?: number;
+  revision?: number;
+  revision_message?: string;
   result: ProfitResult;
   scenarios: ScenarioResult[];
   recommendations: string[];
@@ -138,16 +147,6 @@ export interface HistoricalMetrics {
   orders: number | null;
   returns: number | null;
   source: string;
-}
-
-export interface ResearchReport {
-  provider: "deepseek" | "rules";
-  historical: HistoricalMetrics & { conversion_rate?: number; return_rate?: number };
-  sources: Array<{ url: string; title: string }>;
-  discovered_sources: Array<{ url: string; title: string }>;
-  warnings: string[];
-  missing_data: string[];
-  dimensions: Array<{ name: string; finding: string; evidence: string; status: "verified" | "assumption" | "missing"; action: string }>;
 }
 
 export interface DemoCase {

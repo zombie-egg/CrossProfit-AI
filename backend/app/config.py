@@ -14,6 +14,7 @@ load_dotenv(ROOT_DIR / ".env")
 @dataclass(frozen=True)
 class Settings:
     app_name: str = "CrossProfit AI"
+    engine_version: str = "1.0.0"
     database_url: str = os.getenv("CROSSPROFIT_DB_URL", f"sqlite:///{ROOT_DIR / 'data' / 'crossprofit.db'}")
     openai_api_key: str | None = os.getenv("OPENAI_API_KEY") or None
     openai_model: str = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")

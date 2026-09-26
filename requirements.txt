@@ -9,6 +9,7 @@ beautifulsoup4>=4.12,<5
 pandas>=2.2,<3
 plotly>=5.24,<7
 openpyxl>=3.1,<4
+python-multipart>=0.0.9,<1
 python-dotenv>=1.0,<2
 openai>=1.50,<3
 cryptography>=43,<48

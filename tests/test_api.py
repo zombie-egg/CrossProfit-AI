@@ -10,7 +10,7 @@ from sqlalchemy.pool import StaticPool
 from backend.app.api import auth
 from backend.app.database import get_db
 from backend.app.main import app
-from backend.app.models import Base, CaptchaChallenge, PlatformConnection, VerificationCode
+from backend.app.models import Base, CalibratedParameter, CaptchaChallenge, ForecastSnapshot, PlatformConnection, VerificationCode
 
 
 @pytest.fixture
@@ -86,12 +86,13 @@ def test_merchant_isolation_and_multiple_platform_connections(clients):
     assert [x["id"] for x in first.get("/ui/bootstrap").json()["products"]] == [a_id]
     assert [x["id"] for x in second.get("/ui/bootstrap").json()["products"]] == [b_id]
 
-    credentials = {"platform": "taobao", "label": "旗舰店", "shop_id": "shop-1", "app_key": "private-key", "app_secret": "private-secret"}
+    credentials = {"platform": "tiktok_shop", "label": "旗舰店", "shop_id": "shop-1", "app_key": "private-key", "app_secret": "private-secret"}
     connection = first.post("/connections", json=credentials)
     assert connection.status_code == 201
     assert "private-key" not in connection.text
     assert second.get("/connections").json() == []
-    assert first.post("/connections", json={**credentials, "platform": "douyin"}).status_code == 201
+    assert first.post("/connections", json={**credentials, "platform": "amazon"}).status_code == 201
+    assert first.post("/connections", json={**credentials, "platform": "douyin"}).status_code == 422
     assert len(first.get("/connections").json()) == 2
     with Session(engine) as db:
         stored = db.scalar(select(PlatformConnection).where(PlatformConnection.id == connection.json()["id"]))
@@ -163,3 +164,51 @@ def test_archive_and_export_require_owner(clients):
     assert second.get(f"/analysis/{record_id}").status_code == 404
     assert second.get(f"/export/{record_id}").status_code == 404
     assert second.post(f"/analysis/archive?product_id={product_id}", json=request).status_code == 404
+
+
+def test_snapshot_import_reconciliation_and_isolation(clients):
+    import json
+    from pathlib import Path
+
+    first, second, sent, engine = clients
+    register(first, sent, "owner@example.com")
+    register(second, sent, "other@example.com")
+    product = {"name": "Test", "sku": "PB-001", "category": "blenders", "purchase_cost": "8", "packaging_cost": "1", "currency": "USD"}
+    product_id = first.post("/products", json=product).json()["id"]
+    config = {"platform": "tiktok_shop", "original_price": "100", "platform_commission_rate": "0.10", "demo_default": False}
+    request = {"product": product, "platform_config": config, "activity": {"platform": "tiktok_shop", "activity_name": "Sale", "estimated_sales": 10}, "rate_source": "seller agreement", "rate_effective_date": "2026-09-01"}
+    archived = first.post(f"/analysis/archive?product_id={product_id}", json=request)
+    assert archived.status_code == 200
+    snapshot_id = archived.json()["snapshot_id"]
+    assert archived.json()["revision"] == 1
+    revised = first.post(f"/analysis/archive?product_id={product_id}&activity_id={archived.json()['activity_id']}", json=request)
+    assert revised.json()["revision"] == 2
+    with Session(engine) as db:
+        snapshots = db.scalars(select(ForecastSnapshot).order_by(ForecastSnapshot.id)).all()
+        assert len(snapshots) == 2 and snapshots[0].rate_source == "seller agreement"
+        assert snapshots[0].snapshot_data == snapshots[1].snapshot_data
+        snapshots[0].rate_source = "changed"
+        with pytest.raises(ValueError, match="immutable"):
+            db.commit()
+        db.rollback()
+    mapping = {"fields": {"order_id": "Order", "sku": "SKU", "settled_at": "Settled", "currency": "Currency", "gross_revenue": "Gross", "refund_amount": "Refund", "subsidy_amount": "Subsidy"}, "fee_columns": {"Commission": "Commission"}}
+    content = (Path(__file__).parent / "fixtures" / "settlement_sample.csv").read_bytes()
+    fields = {"platform": "tiktok_shop", "column_mapping": json.dumps(mapping), "fee_mapping": json.dumps({"Commission": "平台佣金"})}
+    preview = first.post("/settlements/import", data=fields, files={"file": ("sample.csv", content, "text/csv")})
+    assert preview.status_code == 200 and preview.json()["row_count"] == 2
+    assert preview.json()["unrecognized_columns"] == ["Other"]
+    assert second.get("/reconciliation").json() == []
+    confirmed = first.post("/settlements/confirm", data=fields, files={"file": ("sample.csv", content, "text/csv")})
+    assert confirmed.status_code == 200
+    import_id = confirmed.json()["import_id"]
+    assert second.post(f"/reconciliation/run?snapshot_id={snapshot_id}&import_id={import_id}").status_code == 404
+    report = first.post(f"/reconciliation/run?snapshot_id={snapshot_id}&import_id={import_id}")
+    assert report.status_code == 200
+    report_id = report.json()["id"]
+    assert report.json()["formula_verdict"] == "PARTIAL"
+    assert report.json()["forecast_diff"]["actual_sales"] == 1
+    assert first.get(f"/reconciliation/{report_id}/export").status_code == 200
+    assert second.get(f"/reconciliation/{report_id}").status_code == 404
+    with Session(engine) as db:
+        parameter = db.scalar(select(CalibratedParameter).where(CalibratedParameter.parameter == "return_rate"))
+        assert parameter and parameter.sample_size == 1 and parameter.category == "blenders"

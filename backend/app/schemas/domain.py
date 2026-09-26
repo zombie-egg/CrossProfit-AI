@@ -14,6 +14,7 @@ class MoneyModel(BaseModel):
 class ProductInput(MoneyModel):
     name: str
     sku: str
+    category: str = "uncategorized"
     purchase_cost: Decimal = Decimal("0")
     packaging_cost: Decimal = Decimal("0")
     weight_kg: Decimal = Decimal("0")
@@ -116,6 +117,25 @@ class ProfitAnalysisRequest(MoneyModel):
     product: ProductInput
     platform_config: PlatformConfigInput
     activity: PromotionActivityInput
+    rate_source: str | None = None
+    rate_effective_date: date | None = None
+
+
+class PortfolioItemInput(MoneyModel):
+    product_id: int
+    platform_config: PlatformConfigInput
+    estimated_sales: int = Field(ge=0)
+
+
+class PortfolioRequest(MoneyModel):
+    activity: PromotionActivityInput
+    items: list[PortfolioItemInput] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def unique_products(self):
+        if len({item.product_id for item in self.items}) != len(self.items):
+            raise ValueError("组合内商品不能重复")
+        return self
 
 
 class CalculationBreakdown(MoneyModel):
@@ -155,6 +175,9 @@ class ScenarioResult(MoneyModel):
     profit_margin: Decimal
     total_profit: Decimal
     profitable: bool
+    sample_size: int | None = None
+    source: Literal["calibrated", "default"] = "default"
+    confidence_note: str | None = None
 
 
 class ParsedPromotion(MoneyModel):

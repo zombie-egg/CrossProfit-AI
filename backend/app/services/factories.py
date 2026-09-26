@@ -9,7 +9,7 @@ from ..schemas.domain import PlatformConfigInput, ProductInput, ProfitAnalysisRe
 def request_from_models(product: Product, config: ProductPlatformConfig, activity: PromotionActivity) -> ProfitAnalysisRequest:
     params = activity.parameters or {}
     return ProfitAnalysisRequest(
-        product=ProductInput(name=product.name, sku=product.seller_sku or product.sku, purchase_cost=product.purchase_cost, packaging_cost=product.packaging_cost, weight_kg=product.weight_kg, volume_cm3=product.volume_cm3, currency=product.currency),
+        product=ProductInput(name=product.name, sku=product.seller_sku or product.sku, category=product.category, purchase_cost=product.purchase_cost, packaging_cost=product.packaging_cost, weight_kg=product.weight_kg, volume_cm3=product.volume_cm3, currency=product.currency),
         platform_config=PlatformConfigInput(
             platform=config.platform, original_price=config.original_price, shipping_cost=config.shipping_cost,
             platform_commission_rate=config.platform_commission_rate, creator_commission_rate=config.creator_commission_rate,

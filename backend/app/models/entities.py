@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import Date, DateTime, ForeignKey, Integer, JSON, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import Date, DateTime, ForeignKey, Integer, JSON, Numeric, String, Text, UniqueConstraint, event
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -17,6 +17,7 @@ class Product(Base):
     name: Mapped[str] = mapped_column(String(120))
     sku: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     seller_sku: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    category: Mapped[str] = mapped_column(String(120), default="uncategorized")
     merchant_id: Mapped[int | None] = mapped_column(ForeignKey("merchants.id"), nullable=True, index=True)
     purchase_cost: Mapped[Decimal] = mapped_column(Numeric(12, 4), default=0)
     packaging_cost: Mapped[Decimal] = mapped_column(Numeric(12, 4), default=0)
@@ -84,6 +85,73 @@ class AnalysisResult(Base):
     result_data: Mapped[dict] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     scenarios: Mapped[list["ScenarioResult"]] = relationship(back_populates="analysis", cascade="all, delete-orphan")
+
+
+class ForecastSnapshot(Base):
+    __tablename__ = "forecast_snapshots"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    merchant_id: Mapped[int] = mapped_column(ForeignKey("merchants.id"), index=True)
+    analysis_id: Mapped[int] = mapped_column(ForeignKey("analysis_results.id"), index=True)
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id"), index=True)
+    activity_id: Mapped[int] = mapped_column(ForeignKey("promotion_activities.id"), index=True)
+    snapshot_data: Mapped[dict] = mapped_column(JSON)
+    engine_version: Mapped[str] = mapped_column(String(32))
+    rate_source: Mapped[str | None] = mapped_column(Text, nullable=True)
+    rate_effective_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    frozen_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    locked: Mapped[bool] = mapped_column(default=True)
+
+
+@event.listens_for(ForecastSnapshot, "before_update")
+@event.listens_for(ForecastSnapshot, "before_delete")
+def _reject_snapshot_change(mapper, connection, target):
+    raise ValueError("forecast snapshot is immutable")
+
+
+class SettlementImport(Base):
+    __tablename__ = "settlement_imports"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    merchant_id: Mapped[int] = mapped_column(ForeignKey("merchants.id"), index=True)
+    platform: Mapped[str] = mapped_column(String(40))
+    file_name: Mapped[str] = mapped_column(String(255))
+    row_count: Mapped[int] = mapped_column(Integer)
+    unmapped_count: Mapped[int] = mapped_column(Integer)
+    imported_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    status: Mapped[str] = mapped_column(String(32), default="confirmed")
+    lines_data: Mapped[list] = mapped_column(JSON)
+    column_mapping: Mapped[dict] = mapped_column(JSON)
+    fee_mapping: Mapped[dict] = mapped_column(JSON)
+    unrecognized_columns: Mapped[list] = mapped_column(JSON, default=list)
+
+
+class ReconciliationReport(Base):
+    __tablename__ = "reconciliation_reports"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    merchant_id: Mapped[int] = mapped_column(ForeignKey("merchants.id"), index=True)
+    snapshot_id: Mapped[int] = mapped_column(ForeignKey("forecast_snapshots.id"), index=True)
+    import_id: Mapped[int] = mapped_column(ForeignKey("settlement_imports.id"), index=True)
+    formula_verdict: Mapped[str] = mapped_column(String(8))
+    max_fee_diff: Mapped[Decimal] = mapped_column(Numeric(12, 4))
+    forecast_diff: Mapped[dict] = mapped_column(JSON)
+    diff_data: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class CalibratedParameter(Base):
+    __tablename__ = "calibrated_parameters"
+    __table_args__ = (UniqueConstraint("merchant_id", "platform", "category", "parameter", name="uq_calibrated_scope"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    merchant_id: Mapped[int] = mapped_column(ForeignKey("merchants.id"), index=True)
+    platform: Mapped[str] = mapped_column(String(40), index=True)
+    category: Mapped[str] = mapped_column(String(120))
+    parameter: Mapped[str] = mapped_column(String(40))
+    p25: Mapped[Decimal] = mapped_column(Numeric(12, 6))
+    p50: Mapped[Decimal] = mapped_column(Numeric(12, 6))
+    p75: Mapped[Decimal] = mapped_column(Numeric(12, 6))
+    sample_size: Mapped[int] = mapped_column(Integer)
+    report_count: Mapped[int] = mapped_column(Integer, default=0)
+    window_days: Mapped[int] = mapped_column(Integer)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
 class ScenarioResult(Base):
