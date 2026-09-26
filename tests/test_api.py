@@ -3,20 +3,24 @@ from __future__ import annotations
 import pytest
 from datetime import timedelta
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, delete, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
 from backend.app.api import auth
-from backend.app.database import get_db
+from backend.app.database import get_db, install_snapshot_guards, register_snapshot_cleanup
 from backend.app.main import app
-from backend.app.models import Base, CalibratedParameter, CaptchaChallenge, ForecastSnapshot, PlatformConnection, VerificationCode
+from backend.app.models import Base, CalibratedParameter, CaptchaChallenge, ForecastSnapshot, PlatformConnection, ReconciliationReport, SettlementImport, VerificationCode
 
 
 @pytest.fixture
 def clients(monkeypatch):
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    register_snapshot_cleanup(engine)
     Base.metadata.create_all(engine)
+    with engine.begin() as connection:
+        install_snapshot_guards(connection)
     def test_db():
         with Session(engine) as session:
             yield session
@@ -191,6 +195,9 @@ def test_snapshot_import_reconciliation_and_isolation(clients):
         with pytest.raises(ValueError, match="immutable"):
             db.commit()
         db.rollback()
+        with pytest.raises(IntegrityError, match="immutable"):
+            db.execute(delete(ForecastSnapshot).where(ForecastSnapshot.id == snapshot_id))
+        db.rollback()
     mapping = {"fields": {"order_id": "Order", "sku": "SKU", "settled_at": "Settled", "currency": "Currency", "gross_revenue": "Gross", "refund_amount": "Refund", "subsidy_amount": "Subsidy"}, "fee_columns": {"Commission": "Commission"}}
     content = (Path(__file__).parent / "fixtures" / "settlement_sample.csv").read_bytes()
     fields = {"platform": "tiktok_shop", "column_mapping": json.dumps(mapping), "fee_mapping": json.dumps({"Commission": "平台佣金"})}
@@ -212,3 +219,11 @@ def test_snapshot_import_reconciliation_and_isolation(clients):
     with Session(engine) as db:
         parameter = db.scalar(select(CalibratedParameter).where(CalibratedParameter.parameter == "return_rate"))
         assert parameter and parameter.sample_size == 1 and parameter.category == "blenders"
+    assert first.delete(f"/products/{product_id}").status_code == 204
+    assert first.get("/forecasts").json() == []
+    assert first.get(f"/reconciliation/{report_id}").status_code == 404
+    with Session(engine) as db:
+        assert db.scalars(select(ForecastSnapshot)).all() == []
+        assert db.scalars(select(ReconciliationReport)).all() == []
+        assert db.scalar(select(SettlementImport).where(SettlementImport.id == import_id)) is not None
+        assert db.scalars(select(CalibratedParameter)).all() == []

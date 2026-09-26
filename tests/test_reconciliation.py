@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from backend.app.services.reconciliation.base import SettlementParseError
+from backend.app.services.reconciliation.base import SettlementLine, SettlementParseError
 from backend.app.services.reconciliation.tiktok import TikTokSettlementParser
 from backend.app.services.reconciliation.amazon import AmazonSettlementParser
 from backend.app.services.reconciliation.mapper import normalize_fees
@@ -11,6 +11,7 @@ from backend.app.services.reconciliation.engine import ReconciliationEngine
 
 
 FIXTURE = Path(__file__).parent / "fixtures" / "settlement_sample.csv"
+MULTI_FIXTURE = Path(__file__).parent / "fixtures" / "settlement_multi_unit.csv"
 MAPPING = {"fields": {"order_id": "Order", "sku": "SKU", "settled_at": "Settled", "currency": "Currency", "gross_revenue": "Gross", "refund_amount": "Refund", "subsidy_amount": "Subsidy"}, "fee_columns": {"Commission": "Commission", "Other": "Other"}}
 
 
@@ -61,3 +62,59 @@ def test_reconciliation_separates_formula_and_forecast(base_request):
     lines[0].fee_items["Commission"] = Decimal("10.014")
     precise = ReconciliationEngine().run(base_request.model_dump(mode="json"), lines, {"Commission": "平台佣金"})
     assert precise["diff_data"]["fee_diffs"][0]["formula_pass"] is False
+
+
+def test_quantity_defaults_and_invalid_values_have_row_numbers():
+    mapping = {"fields": {"order_id": "Order", "sku": "SKU", "settled_at": "Settled", "currency": "Currency", "gross_revenue": "Gross", "quantity": "Quantity"},
+        "fee_columns": {"Commission": "Commission"}}
+    raw = MULTI_FIXTURE.read_bytes()
+    parser = TikTokSettlementParser()
+    assert parser.parse(raw, mapping)[0][0].quantity == 3
+    assert SettlementLine.model_validate(parser.parse(raw, mapping)[0][0].model_dump(exclude={"quantity"})).quantity == 1
+    for invalid in (b"0", b"-1", b"1.5", b""):
+        with pytest.raises(SettlementParseError, match="第 2 行"):
+            parser.parse(raw.replace(b",3,9.00", b"," + invalid + b",9.00"), mapping)
+
+
+def test_multi_unit_fees_and_sales_are_per_unit(base_request):
+    forecast = base_request.model_copy(deep=True)
+    forecast.activity.discount_type = "none"
+    forecast.activity.extra_commission_rate = Decimal("0")
+    forecast.activity.creator_commission_rate = Decimal("0")
+    forecast.platform_config.platform_commission_rate = Decimal("0.10")
+    forecast.platform_config.creator_commission_rate = Decimal("0")
+    forecast.platform_config.payment_fee_rate = Decimal("0")
+    forecast.platform_config.fx_loss_rate = Decimal("0")
+    forecast.platform_config.tariff_rate = Decimal("0")
+    forecast.platform_config.shipping_cost = Decimal("0")
+    forecast.platform_config.return_rate = Decimal("0")
+    forecast.platform_config.other_variable_cost = Decimal("0")
+    mapping = {"fields": {"order_id": "Order", "sku": "SKU", "settled_at": "Settled", "currency": "Currency", "gross_revenue": "Gross", "quantity": "Quantity"},
+        "fee_columns": {"Commission": "Commission"}}
+    lines, unknown = TikTokSettlementParser().parse(MULTI_FIXTURE.read_bytes(), mapping)
+    assert unknown == []
+    result = ReconciliationEngine().run(forecast.model_dump(mode="json"), lines, {"Commission": "平台佣金"})
+    assert result["formula_verdict"] == "PASS"
+    assert Decimal(result["diff_data"]["fee_diffs"][0]["absolute_diff"]) <= Decimal("0.01")
+    assert result["diff_data"]["fee_diffs"][0]["predicted"] == "9.00"
+    assert result["forecast_diff"]["actual_sales"] == 3
+    assert result["forecast_diff"]["returned_units"] == 0
+    lines[0].refund_amount = Decimal("30")
+    refunded = ReconciliationEngine().run(forecast.model_dump(mode="json"), lines, {"Commission": "平台佣金"})
+    assert refunded["forecast_diff"]["returned_units"] == 3
+    assert refunded["forecast_diff"]["actual_return_rate"] == "1.0000"
+
+    single_csv = b"Order,SKU,Settled,Currency,Gross,Commission\no-1,PB-001,2026-09-03,USD,30.00,3.00\n"
+    single_mapping = {"fields": {key: value for key, value in mapping["fields"].items() if key != "quantity"}, "fee_columns": mapping["fee_columns"]}
+    single_lines, _ = TikTokSettlementParser().parse(single_csv, single_mapping)
+    single = ReconciliationEngine().run(forecast.model_dump(mode="json"), single_lines, {"Commission": "平台佣金"})
+    assert single["formula_verdict"] == "PASS"
+    assert single["forecast_diff"]["actual_sales"] == 1
+    assert single["diff_data"]["fee_diffs"][0]["predicted"] == "3.00"
+    lines[0].refund_amount = Decimal("0")
+    lines[0].gross_revenue = Decimal("100.00")
+    lines[0].fee_items["Commission"] = Decimal("10.00")
+    rounded = ReconciliationEngine().run(forecast.model_dump(mode="json"), lines, {"Commission": "平台佣金"})
+    assert rounded["formula_verdict"] == "PASS"
+    assert rounded["diff_data"]["fee_diffs"][0]["reason"] == "ROUNDING"
+    assert rounded["diff_data"]["fee_diffs"][0]["revenue_rounding_residual"] == "0.01"

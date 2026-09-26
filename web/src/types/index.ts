@@ -141,6 +141,17 @@ export interface AnalysisRun {
   recommendations: string[];
 }
 
+export interface ForecastDiff {
+  estimated_sales: number;
+  actual_sales: number;
+  sales_delta: number;
+  predicted_return_rate: string;
+  actual_return_rate: string | null;
+  return_rate_delta: string | null;
+  returned_units: number;
+  note: string;
+}
+
 export interface HistoricalMetrics {
   period: string;
   visitors: number | null;

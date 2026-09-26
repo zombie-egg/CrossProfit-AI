@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from ..models import CalibratedParameter, ForecastSnapshot, ReconciliationReport
@@ -41,12 +41,16 @@ def calibrate(db: Session, merchant_id: int, platform: str, category: str) -> di
         estimated = int(accuracy["estimated_sales"])
         if actual <= 0 or estimated <= 0 or accuracy["actual_return_rate"] is None:
             continue
+        observed_return_rate = (rate(Decimal(int(accuracy["returned_units"])) / Decimal(actual))
+            if "returned_units" in accuracy else Decimal(str(accuracy["actual_return_rate"])))
         report_count += 1
         sample_size += actual
-        values["return_rate"].append(Decimal(str(accuracy["actual_return_rate"])))
+        values["return_rate"].append(observed_return_rate)
         values["sales_multiplier"].append(Decimal(actual) / Decimal(estimated))
     result: dict[str, CalibratedParameter] = {}
     if not report_count:
+        db.execute(delete(CalibratedParameter).where(CalibratedParameter.merchant_id == merchant_id,
+            CalibratedParameter.platform == platform, CalibratedParameter.category == category))
         return result
     for parameter, samples in values.items():
         row = db.scalar(select(CalibratedParameter).where(CalibratedParameter.merchant_id == merchant_id,

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import json
+import re
 from abc import ABC, abstractmethod
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
@@ -22,6 +23,7 @@ class SettlementLine(BaseModel):
     settled_at: datetime
     currency: str
     gross_revenue: Decimal
+    quantity: int = Field(default=1, ge=1, strict=True)
     fee_items: dict[str, Decimal] = Field(default_factory=dict)
     refund_amount: Decimal = Decimal("0")
     subsidy_amount: Decimal = Decimal("0")
@@ -86,6 +88,8 @@ class SettlementParser(ABC):
         missing = [key for key in REQUIRED if not fields.get(key) or fields[key] not in headers]
         if missing:
             raise SettlementParseError(f"缺少必要列映射：{', '.join(missing)}；未识别的列：{', '.join(headers)}")
+        if fields.get("quantity") and fields["quantity"] not in headers:
+            raise SettlementParseError(f"件数列不存在：{fields['quantity']}；未识别的列：{', '.join(headers)}")
         absent_fees = [name for name in fee_columns if name not in headers]
         if absent_fees:
             raise SettlementParseError(f"费项列不存在：{', '.join(absent_fees)}；未识别的列：{', '.join(headers)}")
@@ -116,11 +120,17 @@ class SettlementParser(ABC):
                     raise ValueError("订单 ID、SKU 和币种不能为空")
                 raw_date = (row[fields["settled_at"]] or "").strip()
                 timestamp = datetime.strptime(raw_date, mapping["date_format"]) if mapping.get("date_format") else datetime.fromisoformat(raw_date.replace("Z", "+00:00"))
+                quantity = 1
+                if fields.get("quantity"):
+                    raw_quantity = (row[fields["quantity"]] or "").strip()
+                    if not re.fullmatch(r"[0-9]+", raw_quantity) or int(raw_quantity) < 1:
+                        raise SettlementParseError(f"第 {row_number} 行，列 {fields['quantity']} 的件数必须是正整数：{raw_quantity}")
+                    quantity = int(raw_quantity)
                 fees: dict[str, Decimal] = {}
                 for column, name in fee_columns.items():
                     fees[name] = fees.get(name, Decimal("0")) + amount(row[column] or "", row_number, column) * Decimal(fee_signs.get(column, 1))
                 lines.append(SettlementLine(order_id=order_id, sku=sku, settled_at=timestamp, currency=currency,
-                    gross_revenue=amount(row[fields["gross_revenue"]] or "", row_number, fields["gross_revenue"]),
+                    gross_revenue=amount(row[fields["gross_revenue"]] or "", row_number, fields["gross_revenue"]), quantity=quantity,
                     fee_items=fees,
                     refund_amount=abs(amount(row[fields["refund_amount"]] or "", row_number, fields["refund_amount"])) if fields.get("refund_amount") in headers else Decimal("0"),
                     subsidy_amount=amount(row[fields["subsidy_amount"]] or "", row_number, fields["subsidy_amount"]) if fields.get("subsidy_amount") in headers else Decimal("0"),

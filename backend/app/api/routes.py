@@ -12,7 +12,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session, selectinload
 
-from ..database import get_db
+from ..database import SNAPSHOT_CASCADE_KEY, get_db
 from ..config import settings
 from ..models import AnalysisResult as AnalysisRecord
 from ..models import ForecastSnapshot, Product, ProductPlatformConfig, PromotionActivity, ReconciliationReport, SettlementImport, ScenarioResult as ScenarioRecord
@@ -219,11 +219,32 @@ def delete_product(product_id: int, db: Session = Depends(get_db), merchant: Mer
         raise HTTPException(404, "商品不存在")
     activity_ids = list(db.scalars(select(PromotionActivity.id).where(PromotionActivity.product_id == product_id)))
     analysis_ids = list(db.scalars(select(AnalysisRecord.id).where(AnalysisRecord.product_id == product_id)))
+    snapshots = db.scalars(select(ForecastSnapshot).where(ForecastSnapshot.product_id == product_id,
+        ForecastSnapshot.merchant_id == merchant.id)).all()
+    snapshot_ids = [snapshot.id for snapshot in snapshots]
+    calibration_scopes = {(snapshot.snapshot_data["activity"]["platform"],
+        snapshot.snapshot_data["product"].get("category", "uncategorized")) for snapshot in snapshots}
+    if snapshot_ids:
+        db.execute(delete(ReconciliationReport).where(ReconciliationReport.snapshot_id.in_(snapshot_ids),
+            ReconciliationReport.merchant_id == merchant.id))
+        connection = db.connection()
+        previous = connection.info.get(SNAPSHOT_CASCADE_KEY)
+        connection.info[SNAPSHOT_CASCADE_KEY] = product_id
+        try:
+            db.execute(delete(ForecastSnapshot).where(ForecastSnapshot.id.in_(snapshot_ids),
+                ForecastSnapshot.product_id == product_id, ForecastSnapshot.merchant_id == merchant.id))
+        finally:
+            if previous is None:
+                connection.info.pop(SNAPSHOT_CASCADE_KEY, None)
+            else:
+                connection.info[SNAPSHOT_CASCADE_KEY] = previous
     if analysis_ids:
         db.execute(delete(ScenarioRecord).where(ScenarioRecord.analysis_id.in_(analysis_ids)))
         db.execute(delete(AnalysisRecord).where(AnalysisRecord.id.in_(analysis_ids)))
     if activity_ids:
         db.execute(delete(PromotionActivity).where(PromotionActivity.id.in_(activity_ids)))
+    for platform, category in calibration_scopes:
+        calibrate(db, merchant.id, platform, category)
     db.delete(row); db.commit()
 
 

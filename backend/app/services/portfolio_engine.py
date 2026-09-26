@@ -28,11 +28,20 @@ def analyze_portfolio(payload: PortfolioRequest, products: dict[int, ProductInpu
         contribution += sku_contribution
         risk[result.risk_level] += 1
         rows.append({"product_id": item.product_id, "sku": products[item.product_id].sku, "estimated_sales": item.estimated_sales,
-            "revenue": str(sku_revenue), "marginal_contribution": str(sku_contribution), "margin": str(result.profit_margin), "risk_level": result.risk_level})
+            "revenue": str(sku_revenue), "marginal_contribution": str(sku_contribution), "margin": str(result.profit_margin),
+            "risk_level": result.risk_level, "contribution_flag": "NEGATIVE_CONTRIBUTION" if sku_contribution <= 0 else None})
     total_profit = money(contribution - fixed)
     weighted_margin = rate(total_profit / revenue) if revenue else Decimal("0")
-    excluded = [{**row, "reason": "NEGATIVE_CONTRIBUTION" if Decimal(row["marginal_contribution"]) <= 0 else "DILUTES_MARGIN"}
-        for row in sorted(rows, key=lambda row: Decimal(row["marginal_contribution"]))
-        if Decimal(row["marginal_contribution"]) <= 0 or (Decimal(row["margin"]) < weighted_margin and len(rows) > 1)]
+    excluded = []
+    if len(rows) > 1:
+        for row in sorted(rows, key=lambda item: Decimal(item["marginal_contribution"])):
+            sku_contribution = Decimal(row["marginal_contribution"])
+            if sku_contribution > 0:
+                continue
+            profit_if_removed = money(contribution - sku_contribution - fixed)
+            improvement = money(profit_if_removed - total_profit)
+            if improvement > 0:
+                excluded.append({**row, "reason": "REMOVAL_IMPROVES_TOTAL",
+                    "profit_if_removed": str(profit_if_removed), "improvement": str(improvement)})
     return {"total_profit": str(total_profit), "total_revenue": str(money(revenue)), "weighted_margin": str(weighted_margin),
         "fixed_cost": str(money(fixed)), "risk_distribution": dict(risk), "sku_results": rows, "exclude_candidates": excluded}
